@@ -17,3 +17,5 @@ contracts/*/target/
 .vercel/
 *.pem
 *.key
+.vercel
+.env*

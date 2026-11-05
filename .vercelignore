@@ -1,0 +1,8 @@
+node_modules
+.venv
+out
+contracts/*/target
+.git
+.env
+.env.local
+*.wasm
