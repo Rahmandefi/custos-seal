@@ -60,7 +60,7 @@
 .wiz-steps-h li.on span{background:var(--q);color:#fff}
 .wiz-steps-h li.done span{background:var(--p);color:var(--bh)}
 .wiz-body{padding:20px 28px 22px}
-.wiz-body .btn.primary{width:auto;min-width:160px}
+.wiz-body>.btn.primary{width:auto;align-self:flex-start;min-width:160px}
 .wiz-err{color:var(--w);background:var(--d);border:1px solid var(--g);border-radius:8px;padding:10px 12px}
 .ssearch input{flex:1;border:0;background:transparent;color:#fff;font:400 13px var(--z);outline:none;min-width:0}
 .gsearch{position:relative;width:min(280px,28vw);min-width:140px}

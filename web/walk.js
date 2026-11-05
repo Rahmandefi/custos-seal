@@ -140,7 +140,7 @@ export function nextLabel(w) {
 export function holdReceipts(status) {
   return (status?.receipts || []).filter((r) => {
     const v = r.policy_verdict;
-    const name = typeof v === "object" ? Object.keys(v)[0] : String(v || "");
+    const name = v && typeof v === "object" ? Object.keys(v)[0] || "" : String(v || "");
     return name.toUpperCase() === "HOLD";
   });
 }

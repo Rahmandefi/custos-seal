@@ -142,8 +142,8 @@ function writeHeaders(extra = {}) {
 }
 
 function kindLabel(k) {
-  if (!k) return "—";
-  if (typeof k === "object") return Object.keys(k)[0];
+  if (k == null || k === "") return "—";
+  if (typeof k === "object") return Object.keys(k)[0] || "—";
   return String(k);
 }
 
@@ -1027,6 +1027,7 @@ function bindSetup() {
         state.walk.evidenceName = s.evidenceName;
         state.walk.commitment = s.commitment;
         state.walk.salt = s.salt;
+        state.walk.skipped = true;
         persistWalk();
         location.hash = "#/workspace";
         return;
