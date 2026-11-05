@@ -1,5 +1,5 @@
 /** Buffer a case-export JSON into a PDF. Same sections as scripts/export-pdf.py. */
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 
 const INK = rgb(0.043, 0.071, 0.125);
 const MUTED = rgb(0.278, 0.329, 0.404);
@@ -14,9 +14,9 @@ function s(v) {
 
 export async function renderPdf(data) {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.TimesRoman);
-  const bold = await doc.embedFont(StandardFonts.TimesBold);
-  const mono = await doc.embedFont(StandardFonts.Courier);
+  const font = await doc.embedFont("Times-Roman");
+  const bold = await doc.embedFont("Times-Bold");
+  const mono = await doc.embedFont("Courier");
   const pageW = 612;
   const pageH = 792;
   const margin = 48;
