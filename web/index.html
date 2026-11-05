@@ -12,5 +12,16 @@
 <body>
   <div class="app" id="app"></div>
   <script type="module" src="/app.js?v=__ASSET_V__"></script>
+  <script>
+    setTimeout(function () {
+      var el = document.getElementById("app");
+      if (el && !el.innerHTML) {
+        el.innerHTML = '<div style="max-width:420px;margin:20vh auto;padding:24px;font:14px system-ui">'
+          + '<h1 style="font-size:20px">Custos Seal failed to load</h1>'
+          + '<p>A cached or blocked script stopped the app. Hard-refresh (Ctrl/Cmd+Shift+R) or try another network.</p>'
+          + '<button onclick="location.reload()">Reload</button></div>';
+      }
+    }, 4000);
+  </script>
 </body>
 </html>

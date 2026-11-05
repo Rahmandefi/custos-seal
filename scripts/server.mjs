@@ -371,14 +371,10 @@ export async function handleRequest(req, res) {
         let buf = await readFile(file);
         const ext = extname(file);
         const headers = { "Content-Type": MIME[ext] || "application/octet-stream" };
-        if (ext === ".html") {
-          buf = Buffer.from(
-            buf
-              .toString("utf8")
-              .replaceAll("__ASSET_V__", ASSET_V)
-          );
-          headers["Cache-Control"] = "no-store";
-        } else if ([".js", ".css", ".svg", ".ico", ".png"].includes(ext)) {
+        if (ext === ".html" || ext === ".js") {
+          buf = Buffer.from(buf.toString("utf8").replaceAll("__ASSET_V__", ASSET_V));
+          headers["Cache-Control"] = ext === ".html" ? "no-store" : "public, max-age=31536000, immutable";
+        } else if ([".css", ".svg", ".ico", ".png"].includes(ext)) {
           headers["Cache-Control"] = "public, max-age=31536000, immutable";
         }
         res.writeHead(200, headers);

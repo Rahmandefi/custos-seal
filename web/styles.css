@@ -149,3 +149,141 @@
   .hd h1{font-size:20px}
   .ar .btn{min-width:0}
 }
+.app.land-mode{
+  background:
+    radial-gradient(900px 480px at 100% -10%, rgba(31,79,209,.22), transparent 55%),
+    radial-gradient(700px 420px at 0% 110%, rgba(31,79,209,.14), transparent 50%),
+    linear-gradient(165deg, #0B1220 0%, #121B2C 45%, #18233A 100%);
+}
+.wiz-page{
+  position:relative;
+  isolation:isolate;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:48px 20px 56px;
+  gap:22px;
+  overflow:hidden;
+}
+.hex-field{
+  pointer-events:none;
+  position:absolute;
+  inset:0;
+  z-index:0;
+}
+.hex-cluster{position:absolute; filter:drop-shadow(0 0 12px rgba(255,255,255,.08))}
+.hex-tr{top:-24px; right:-36px; width:min(320px,58vw); height:auto}
+.hex-bl{bottom:-36px; left:-28px; width:min(280px,52vw); height:auto}
+.wiz-logo,
+.wiz-hero,
+.wiz-card,
+.wiz-foot{position:relative; z-index:1}
+.wiz-logo{
+  display:flex; align-items:center; gap:12px;
+  color:#fff; align-self:center;
+}
+.wiz-mark{
+  width:44px; height:44px; border-radius:12px;
+  display:grid; place-items:center;
+  background:linear-gradient(145deg,#2A5BE0,#1A3BA0);
+  box-shadow:0 0 0 1px rgba(255,255,255,.1) inset, 0 8px 24px rgba(31,79,209,.35);
+  color:#fff;
+}
+.wiz-brand{display:flex; flex-direction:column; line-height:1.15}
+.wiz-title{font-size:18px; font-weight:600; letter-spacing:-.02em}
+.wiz-sub{font-size:12px; color:#C9D2E0; font-weight:500}
+.wiz-hero{
+  max-width:560px; text-align:center;
+  color:#E7ECF3;
+}
+.wiz-kicker{
+  margin:0 0 10px;
+  font:600 11px/1.2 var(--ba);
+  letter-spacing:.14em; text-transform:uppercase;
+  color:#8E9AAE;
+}
+.wiz-hero h1{
+  margin:0;
+  font-size:clamp(26px,5vw,34px);
+  line-height:1.18; letter-spacing:-.025em;
+  color:#fff; font-weight:600;
+}
+.wiz-hero .lede{
+  margin:12px 0 0;
+  color:#C9D2E0; font-size:15px;
+}
+.wiz-card{
+  width:min(560px,100%);
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.1);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.06) inset,
+    0 24px 64px rgba(0,0,0,.35);
+  background:rgba(255,255,255,.97);
+  backdrop-filter:blur(8px);
+  overflow:hidden;
+}
+.wiz-steps-h{
+  display:flex; gap:8px; flex-wrap:wrap;
+  margin:0; padding:14px 18px;
+  list-style:none;
+  border-bottom:1px solid var(--be);
+  background:linear-gradient(180deg,#F8F9FB,#fff);
+}
+.wiz-steps-h li{
+  display:flex; align-items:center; gap:6px;
+  font-size:12.5px; font-weight:600; color:var(--s);
+}
+.wiz-steps-h li span{
+  width:22px; height:22px; border-radius:999px;
+  display:grid; place-items:center;
+  font:700 11px var(--ba);
+  background:#EEF1F5; color:var(--u);
+}
+.wiz-steps-h li.on{color:var(--q)}
+.wiz-steps-h li.on span{background:var(--q); color:#fff}
+.wiz-steps-h li.done span{background:var(--p); color:var(--bh)}
+.wiz-body{padding:22px 22px 18px; display:grid; gap:16px}
+.wiz-nav{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.wiz-foot{margin:0; text-align:center; max-width:480px; color:#8E9AAE; font-size:12.5px}
+.wiz-body .btn.primary{min-width:180px}
+.wiz-body .btn.ghost{background:transparent}
+.brand{
+  flex:0 1 auto;
+  max-width:min(260px,34vw);
+  overflow:hidden;
+}
+.brand-name,
+.brand-sub{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:100%;
+}
+.gsearch{
+  flex:0 1 280px;
+  min-width:0;
+  width:min(280px,28vw);
+}
+@media (max-width:480px){
+  .wiz-page{padding:28px 14px 40px; justify-content:flex-start}
+  .hex-tr{width:min(220px,70vw)}
+  .hex-bl{width:min(200px,65vw)}
+  .wiz-hero h1{font-size:24px}
+}
+@media (prefers-reduced-motion:reduce){
+  .hex-cluster{filter:none}
+}
+@media (max-width:768px){
+  html,body{overflow-x:hidden}
+  .app,.main,.content{max-width:100vw;overflow-x:hidden}
+  .rail{max-width:100vw}
+  .tree{max-width:100%;-webkit-overflow-scrolling:touch}
+  .brand{max-width:100%; flex:1 1 auto}
+  .brand-sub{display:none}
+  .top .chip{max-width:46vw; overflow:hidden; text-overflow:ellipsis}
+  .tbl{overflow-x:auto}
+  .tbl table{min-width:560px}
+}

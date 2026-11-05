@@ -13,7 +13,7 @@ import {
   decidedHolds,
   pendingHolds,
   fileToB64,
-} from "./walk.js";
+} from "./walk.js?v=__ASSET_V__";
 import {
   loadSetup,
   saveSetup,
@@ -23,7 +23,7 @@ import {
   setupNext,
   setupPrev,
   setupValid,
-} from "./setup.js";
+} from "./setup.js?v=__ASSET_V__";
 import {
   loadWallet,
   saveWallet,
@@ -33,7 +33,7 @@ import {
   signOutWallet,
   syncFromSelector,
   ensureSelector,
-} from "./wallet.js";
+} from "./wallet.js?v=__ASSET_V__";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -113,14 +113,25 @@ function route() {
   state.walk = loadWalk();
   state.setup = loadSetup();
   state.wallet = loadWallet();
-  const h = location.hash.replace(/^#\/?/, "");
-  if (setupOpen() && (!h || h === "setup" || h === "land")) {
+  let h = location.hash.replace(/^#\/?/, "");
+
+  if (!h) {
+    history.replaceState(null, "", "#/setup");
+    h = "setup";
+  }
+
+  if (h === "setup" || h === "land") {
+    if (!setupOpen()) {
+      state.setup = { ...defaultSetup(), completed: false, skipped: false, step: "connect" };
+      persistSetup();
+    }
     state.view = "setup";
     state.arg = undefined;
     render();
     return;
   }
-  const [view, arg] = (h || "cases").split("/");
+
+  const [view, arg] = h.split("/");
   state.view = view || "cases";
   state.arg = arg;
   render();
@@ -390,7 +401,7 @@ function top(crumb, chip) {
       )}</span>${esc(shortAccount(wlt.accountId))}</div>`
     : `<button class="btn sm" type="button" id="top-connect">Connect</button>`;
   return `<header class="top">
-    <a class="brand" href="#/cases">
+    <a class="brand" href="#/setup">
       <span class="brand-name">Custos Seal</span>
       <span class="brand-sub">Private Forensic Triage Assistant</span>
     </a>
@@ -539,7 +550,7 @@ function viewWorkspace() {
   const w = state.walk;
   const files = w.evidenceName
     ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded</td></tr>`
-    : `<tr><td colspan="2" class="empty">No evidence yet. Upload a file to start.</td></tr>`;
+    : `<tr><td colspan="2" class="empty">No local evidence file yet. Findings and receipts are already on chain for the sample case — Load the sample file below, or open <a href="#/finding">Findings</a> / <a href="#/receipt">Custody log</a>.</td></tr>`;
   return shell(
     "workspace",
     crumb("Evidence"),
@@ -969,7 +980,7 @@ function wizardPane() {
           ? `<div class="dsec" style="padding:12px 0"><div class="dl">Salted commitment</div>
              <p>${copyVal(s.commitment)}</p>
              <p class="lede">${esc(s.evidenceName)}</p></div>`
-          : `<p class="lede empty">No evidence yet. Upload a file or load the sample.</p>`
+          : `<p class="lede empty">No local evidence file yet — load the sample file; sample findings are already on chain.</p>`
       }`;
   }
   const acct = wlt.connected && wlt.accountId ? shortAccount(wlt.accountId) : "No wallet";
@@ -999,8 +1010,55 @@ function viewSetup() {
     const cls = i === idx ? "on" : i < idx ? "done" : "";
     return `<li class="${cls}"><span>${st.n}</span>${st.label}</li>`;
   }).join("");
+
+  const isConnect = s.step === "connect";
   return `<div class="wiz-page">
-    <header class="wiz-logo">${svg("shield", 22)}<span>Custos Seal</span></header>
+    <div class="hex-field" aria-hidden="true">
+      <svg class="hex-cluster hex-tr" viewBox="0 0 280 220" width="280" height="220">
+        <g fill="none" stroke="#FFFFFF" stroke-width="1.25" opacity="0.85">
+          <path d="M40 30l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M96 30l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M152 30l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M68 78l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M124 78l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M180 78l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M96 126l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M152 126l28-16 28 16v32l-28 16-28-16z"/>
+        </g>
+        <g fill="#FFFFFF" opacity="0.35">
+          <path d="M208 40l20-12 20 12v24l-20 12-20-12z"/>
+          <path d="M40 150l16-9 16 9v18l-16 9-16-9z"/>
+        </g>
+      </svg>
+      <svg class="hex-cluster hex-bl" viewBox="0 0 240 200" width="240" height="200">
+        <g fill="none" stroke="#FFFFFF" stroke-width="1.25" opacity="0.8">
+          <path d="M30 110l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M86 110l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M58 158l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M142 90l28-16 28 16v32l-28 16-28-16z"/>
+          <path d="M114 138l28-16 28 16v32l-28 16-28-16z"/>
+        </g>
+        <g fill="#FFFFFF" opacity="0.28">
+          <path d="M170 130l18-10 18 10v20l-18 10-18-10z"/>
+        </g>
+      </svg>
+    </div>
+    <header class="wiz-logo">
+      <span class="wiz-mark">${svg("shield", 22)}</span>
+      <div class="wiz-brand">
+        <span class="wiz-title">Custos Seal</span>
+        <span class="wiz-sub">Private Forensic Triage Assistant</span>
+      </div>
+    </header>
+    ${
+      isConnect
+        ? `<div class="wiz-hero">
+        <p class="wiz-kicker mono">NEAR · testnet · confidential TEE</p>
+        <h1>Seal the chain of custody before the first byte moves</h1>
+        <p class="lede">Connect an investigator wallet to start a case, or continue without one for a read-only walkthrough of the sample incident.</p>
+      </div>`
+        : ""
+    }
     <div class="wiz-card card">
       <ol class="wiz-steps-h" aria-label="Setup">${steps}</ol>
       <div class="wiz-body">
@@ -1013,6 +1071,7 @@ function viewSetup() {
         </div>
       </div>
     </div>
+    <p class="wiz-foot mut">Evidence is fingerprinted, not stored in the custody log. Sample items stay marked as training data.</p>
   </div>`;
 }
 
