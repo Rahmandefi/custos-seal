@@ -1,0 +1,7 @@
+# FICTIONAL SCENARIO: FOR DEMONSTRATION ONLY.
+# Organization, hosts, IPs, and events below are invented.
+# IPs are RFC 5737 documentation addresses.
+# FICTIONAL SCENARIO: synthetic web-server log excerpt
+2023-06-01 02:14:07 GET  /              200 203.0.113.10  Mozilla/5.0
+2023-06-01 02:41:55 POST /human2.aspx   200 198.51.100.23 -
+2023-06-01 02:42:31 GET  /human2.aspx   200 198.51.100.23 -

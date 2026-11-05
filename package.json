@@ -1,0 +1,24 @@
+{
+  "name": "forensic-triage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private forensic triage: attested TEE analysis + NEAR custody receipts",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "verify-one": "node scripts/verify-one.mjs",
+    "test:policy": "node --test src/policy.test.mjs",
+    "test:pipeline": "node --test src/pipeline.test.mjs",
+    "analyze": "node scripts/analyze.mjs",
+    "verify-from-chain": "node scripts/verify-from-chain.mjs",
+    "server": "node scripts/server.mjs",
+    "key-scope": "node scripts/key-scope-rpc.mjs"
+  },
+  "dependencies": {
+    "@nearai/inference-sdk": "0.2.1",
+    "near-api-js": "^7.4.0",
+    "tweetnacl": "^1.0.3"
+  }
+}

@@ -1,0 +1,5 @@
+# FICTIONAL SCENARIO: FOR DEMONSTRATION ONLY.
+# FICTIONAL SCENARIO: synthetic host isolation recommendation
+host xfer-01 C:\MOVEitTransfer\wwwroot\human2.aspx created 2023-06-01 02:39
+RECOMMENDED ACTION: isolate_host
+Isolate host xfer-01. Do not delete files. Do not notify_external.
