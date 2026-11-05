@@ -25,7 +25,7 @@ import {
 import { runAttack } from "../src/attacks.mjs";
 import { evidenceCommitment, hexToBytes, newSalt } from "../src/commit.mjs";
 import { buildExport, rememberTx } from "../src/export.mjs";
-import { spawn } from "node:child_process";
+import { renderPdf } from "../src/render-pdf.mjs";
 
 
 await loadEnv();
@@ -277,27 +277,32 @@ export async function handleRequest(req, res) {
       json(res, 200, await buildExport(OUT));
       return;
     }
-    if (req.method === "GET" && (req.url === "/api/export.pdf" || req.url === "/api/export.pdf/")) {
-      const payload = await buildExport(OUT);
-      const jsonPath = join(OUT, "case-export.json");
-      const pdfPath = join(OUT, "case-report.pdf");
-      await writeFile(jsonPath, JSON.stringify(payload, null, 2));
-      await new Promise((resolve, reject) => {
-        const py = join(ROOT, ".venv", "bin", "python");
-        const child = spawn(py, [join(ROOT, "scripts/export-pdf.py"), jsonPath, pdfPath], {
-          cwd: ROOT,
+    if ((req.method === "GET" || req.method === "HEAD") && (pathOnly === "/api/export.pdf")) {
+      const PDF_NAME = "custos-seal-larkmoor-demo-report.pdf";
+      if (req.method === "HEAD") {
+        res.writeHead(200, {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${PDF_NAME}"`,
         });
-        let err = "";
-        child.stderr.on("data", (d) => (err += d));
-        child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(err || `pdf exit ${code}`))));
-      });
-      const buf = await readFile(pdfPath);
-      res.writeHead(200, {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": 'attachment; filename="custos-seal-report.pdf"',
-        "Content-Length": buf.length,
-      });
-      res.end(buf);
+        res.end();
+        return;
+      }
+      const withTimeout = (p, ms, code) =>
+        Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(code)), ms))]);
+      try {
+        const payload = await withTimeout(buildExport(OUT), 15000, "export_timeout");
+        const buf = await withTimeout(renderPdf(payload), 15000, "pdf_timeout");
+        res.writeHead(200, {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${PDF_NAME}"`,
+          "Content-Length": buf.length,
+          "Cache-Control": "no-store",
+        });
+        res.end(buf);
+      } catch (e) {
+        console.error("export.pdf failed:", e);
+        json(res, /timeout/.test(e.message) ? 504 : 500, { error: "pdf_failed", detail: String(e.message) });
+      }
       return;
     }
     if (req.method === "POST" && req.url === "/api/commit") {

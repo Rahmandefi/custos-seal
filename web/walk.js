@@ -145,6 +145,27 @@ export function holdReceipts(status) {
   });
 }
 
+function kindName(k) {
+  return k && typeof k === "object" ? Object.keys(k)[0] || "" : String(k || "");
+}
+
+/** Map heldReceiptId -> { decision: "Approval"|"Rejection", by: decisionReceiptId } */
+export function decidedHolds(status) {
+  const m = new Map();
+  for (const r of status?.receipts || []) {
+    const k = kindName(r.kind);
+    if (k !== "Approval" && k !== "Rejection") continue;
+    const id = Number(String(r.reason || "").match(/receipt=(\d+)/)?.[1]);
+    if (Number.isFinite(id)) m.set(id, { decision: k, by: Number(r.id) });
+  }
+  return m;
+}
+
+export function pendingHolds(status) {
+  const d = decidedHolds(status);
+  return holdReceipts(status).filter((r) => !d.has(Number(r.id)));
+}
+
 export async function fileToB64(file) {
   const buf = new Uint8Array(await file.arrayBuffer());
   let s = "";

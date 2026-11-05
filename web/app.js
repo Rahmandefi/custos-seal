@@ -10,6 +10,8 @@ import {
   nextEnabled,
   nextLabel,
   holdReceipts,
+  decidedHolds,
+  pendingHolds,
   fileToB64,
 } from "./walk.js";
 import {
@@ -71,8 +73,11 @@ const state = {
   analyze: null,
   verify: null,
   attack: null,
-  selectedReceipt: null,
   file: null,
+  receipts: {},
+  exportData: null,
+  exportMsg: null,
+  exportLoading: false,
   walk: loadWalk(),
   setup: loadSetup(),
   wallet: loadWallet(),
@@ -132,6 +137,35 @@ async function loadStatus() {
     state.statusLoading = false;
   }
   render();
+  prefetchReceipts();
+}
+
+const receiptReq = {};
+function getReceipt(id) {
+  id = Number(id);
+  if (!receiptReq[id]) {
+    receiptReq[id] = fetch(`/api/receipt/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        state.receipts[id] = d;
+        return d;
+      })
+      .catch(() => {
+        state.receipts[id] = null;
+        return null;
+      });
+  }
+  return receiptReq[id];
+}
+
+async function prefetchReceipts() {
+  const ids = (state.status?.receipts || []).map((r) => Number(r.id));
+  await Promise.all(ids.map(getReceipt));
+  render();
+}
+
+function bytesToHexReplacer(_k, v) {
+  return Array.isArray(v) && v.length && v.every((n) => typeof n === "number") ? hexOf(v) : v;
 }
 
 function writeHeaders(extra = {}) {
@@ -196,8 +230,17 @@ function hexOf(arr) {
     .join("");
 }
 
+const NEARBLOCKS = "https://testnet.nearblocks.io";
+
 function explorerTx(tx) {
-  return `https://explorer.testnet.near.org/transactions/${tx}`;
+  return `${NEARBLOCKS}/txns/${tx}`;
+}
+
+function caseName() {
+  return state.setup.caseName || state.walk.caseName || "Larkmoor Records Office";
+}
+function crumb(page) {
+  return `Cases <span>›</span> ${esc(caseName())} <span>›</span> <b>${page}</b>`;
 }
 
 function rail(active) {
@@ -209,7 +252,7 @@ function rail(active) {
     <div class="logo">${svg("shield", 20)}</div>
     ${item("cases", "folder", "Cases", "#/cases")}
     ${item("workspace", "file", "Evidence", "#/workspace")}
-    ${item("analyze", "list", "Analysis", "#/analyze", "1")}
+    ${item("analyze", "list", "Analysis", "#/analyze")}
     ${item("security", "key", "Security", "#/security")}
     ${item("reports", "report", "Reports", "#/reports")}
   </nav>`;
@@ -225,13 +268,11 @@ function tree(active) {
   const q = (state.filterQ || "").toLowerCase();
   const items = [
     ["cases", "folder", "All cases", "#/cases", "1", ""],
-    ["approvals", "hold", "Approvals", "#/approvals", String(holdReceipts(state.status).length), "hold"],
+    ["approvals", "hold", "Approvals", "#/approvals", String(pendingHolds(state.status).length || ""), "hold"],
     ["access", "users", "Access", "#/access", "", ""],
-    ["security", "key", "Security", "#/security", "", ""],
-    ["workspace", "file", "Evidence files", "#/workspace", "2", ""],
+    ["workspace", "file", "Evidence files", "#/workspace", state.walk.evidenceName ? "1" : "", ""],
     ["custody", "hash", "Custody check", "#/custody", "", ""],
     ["receipt", "link", "Custody log", "#/receipt", String(n), ""],
-    ["analyze", "list", "Run analysis", "#/analyze", "", ""],
     ["finding", "flag", "Findings", "#/finding", "", ""],
     ["reports", "report", "Case report", "#/reports", "", ""],
   ].filter((it) => !q || it[2].toLowerCase().includes(q));
@@ -242,23 +283,27 @@ function tree(active) {
   return `<aside class="side">
     <div class="sh">
       <div class="k">Case</div>
-      <div class="t">${state.setup.caseName || state.walk.caseName || "Larkmoor Records Office"}</div>
+      <div class="t">${esc(caseName())}</div>
       <div class="m">${state.setup.caseDesc || state.walk.caseDesc || "File-transfer breach"}${sampleLabel(
         state.setup.evidenceName || state.walk.evidenceName || "larkmoor"
       )}</div>
     </div>
-    <label class="ssearch">${svg("search", 14)}<input id="side-filter" type="search" placeholder="Filter" value="${esc(
+    <label class="ssearch">${svg("search", 14)}<input id="side-filter" type="search" placeholder="Filter pages and log" value="${esc(
       state.filterQ
     )}" /></label>
     <div class="tree">
-      <div class="tg">Cases</div>
-      ${items.filter((i) => ["cases", "approvals", "access", "security"].includes(i[0])).map(link).join("")}
-      <div class="tg">Evidence</div>
-      ${items.filter((i) => ["workspace", "custody", "receipt"].includes(i[0])).map(link).join("")}
-      <div class="tg">Analysis</div>
-      ${items.filter((i) => ["analyze", "finding"].includes(i[0])).map(link).join("")}
-      <div class="tg">Reports</div>
-      ${items.filter((i) => i[0] === "reports").map(link).join("")}
+      ${(() => {
+        const group = (title, ids) => {
+          const g = items.filter((i) => ids.includes(i[0]));
+          return g.length ? `<div class="tg">${title}</div>${g.map(link).join("")}` : "";
+        };
+        const html =
+          group("Cases", ["cases", "approvals", "access"]) +
+          group("Evidence", ["workspace", "custody", "receipt"]) +
+          group("Analysis", ["finding"]) +
+          group("Reports", ["reports"]);
+        return html || `<div class="tg">No matches for '${esc(state.filterQ)}'</div>`;
+      })()}
     </div>
     <div class="sfoot">${svg("lock", 13)}Evidence encrypted at rest</div>
   </aside>`;
@@ -267,7 +312,14 @@ function tree(active) {
 function lastAnalysisChip() {
   const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
   if (!findings.length) return `<span class="chip net">No analysis yet</span>`;
-  const v = kindLabel(findings[findings.length - 1].policy_verdict);
+  const last = findings[findings.length - 1];
+  const v = kindLabel(last.policy_verdict);
+  if (v === "Hold") {
+    const d = decidedHolds(state.status).get(Number(last.id));
+    return d
+      ? `<span class="chip net">${svg("hold", 13)}Last analysis: Hold · ${d.decision === "Rejection" ? "rejected" : "approved"} (receipt ${d.by})</span>`
+      : `<span class="chip bad">${svg("hold", 13)}Last analysis: Hold · waiting</span>`;
+  }
   const ok = v === "Accept";
   return `<span class="chip ${ok ? "ok" : "bad"}">${svg(ok ? "shieldok" : "flag", 13)}Last analysis: ${v || "Recorded"}</span>`;
 }
@@ -276,10 +328,24 @@ function searchHits() {
   const q = (state.searchQ || "").trim().toLowerCase();
   if (!q) return [];
   const hits = [];
-  for (const r of state.status?.receipts || []) {
-    const blob = JSON.stringify(r).toLowerCase();
+  const list = state.status?.receipts || [];
+  for (const r of list) {
+    const full = state.receipts[r.id];
+    const blob = (JSON.stringify(r) + " " + (full ? JSON.stringify(full, bytesToHexReplacer) : "")).toLowerCase();
     if (blob.includes(q)) {
       hits.push({ type: "Receipts", label: `Receipt ${r.id} · ${kindLabel(r.kind)}`, href: `#/receipt/${r.id}` });
+      const k = kindLabel(r.kind);
+      const ref = Number(String(r.reason || "").match(/receipt=(\d+)/)?.[1]);
+      if ((k === "Approval" || k === "Rejection") && Number.isFinite(ref)) {
+        const held = list.find((x) => Number(x.id) === ref);
+        if (held) {
+          hits.push({
+            type: "Receipts",
+            label: `Receipt ${ref} · ${kindLabel(held.kind)} (${kindLabel(held.policy_verdict)}, decided in receipt ${r.id})`,
+            href: `#/receipt/${ref}`,
+          });
+        }
+      }
     }
     if (String(r.actor || "").toLowerCase().includes(q)) {
       hits.push({ type: "Accounts", label: r.actor, href: `#/receipt/${r.id}` });
@@ -289,17 +355,11 @@ function searchHits() {
   if (ev && ev.toLowerCase().includes(q)) {
     hits.push({ type: "Evidence", label: ev, href: "#/workspace" });
   }
-  const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
-  for (const r of findings) {
-    if ((r.reason || "").toLowerCase().includes(q) || "xfer".includes(q) && String(r.reason || "").toLowerCase().includes("xfer")) {
-      hits.push({ type: "Findings", label: `Finding ${r.id}`, href: `#/receipt/${r.id}` });
-    }
-  }
   const seen = new Set();
   return hits.filter((h) => {
-    const k = h.type + h.label + h.href;
-    if (seen.has(k)) return false;
-    seen.add(k);
+    const key = h.type + h.label + h.href;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -403,7 +463,7 @@ function viewLand() {
     <div class="land-card">
       <div class="eyebrow">NEAR testnet</div>
       <h1>Custos Seal: Private Forensic Triage Assistant</h1>
-      <p class="lede">Guided first run. Sample items stay marked FICTIONAL. Evidence is fingerprinted, not stored in the custody log.</p>
+      <p class="lede">Guided first run. Evidence is fingerprinted, not stored in the custody log.</p>
       <ol class="wbar landbar" aria-label="Walkthrough">
         ${BAR.map((b) => `<li><span>${b.n}</span> ${b.label}</li>`).join("")}
       </ol>
@@ -412,7 +472,6 @@ function viewLand() {
         <button class="btn" type="button" id="land-sample">${svg("file", 17)}Try the sample case</button>
         <a class="btn" href="#/receipt" id="land-verify">${svg("link", 17)}Verify a receipt</a>
       </div>
-      <p class="mut">All sample data is FICTIONAL.</p>
     </div>
   </div>`;
 }
@@ -420,6 +479,8 @@ function viewLand() {
 function viewCases() {
   const w = state.walk;
   const holds = holdReceipts(state.status);
+  const pending = pendingHolds(state.status);
+  const decidedN = holds.length - pending.length;
   const fq = (state.filterQ || "").toLowerCase();
   const rows = (state.status?.receipts || [])
     .slice()
@@ -457,7 +518,9 @@ function viewCases() {
       </div></div>
     ${caseForm}
     <div class="kpis">
-      <a class="kpi hold" href="#/approvals"><div class="kh"><span class="ki">${svg("hold", 17)}</span>Waiting for approval</div><div class="kv">${holds.length}</div><div class="ks">${holds.length ? "HOLD receipts on chain" : "No HOLD items"}</div></a>
+      <a class="kpi hold" href="#/approvals"><div class="kh"><span class="ki">${svg("hold", 17)}</span>Waiting for approval</div><div class="kv">${pending.length}</div><div class="ks">${
+        pending.length ? "HOLD receipts waiting for a decision" : decidedN ? `${decidedN} HOLD decided on chain` : "No HOLD items"
+      }</div></a>
       <a class="kpi block" href="#/custody"><div class="kh"><span class="ki">${svg("shieldx", 17)}</span>Custody checks</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "CustodyCheck").length}</div><div class="ks">From the custody log</div></a>
       <a class="kpi flag" href="#/finding"><div class="kh"><span class="ki">${svg("flag", 17)}</span>Findings</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding").length}</div><div class="ks">On-chain Finding receipts</div></a>
       <a class="kpi neutral" href="#/workspace"><div class="kh"><span class="ki">${svg("folder", 17)}</span>Open cases</div><div class="kv">1</div><div class="ks">Larkmoor Records Office</div></a>
@@ -475,11 +538,11 @@ function viewCases() {
 function viewWorkspace() {
   const w = state.walk;
   const files = w.evidenceName
-    ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded${sampleLabel(w.evidenceName)}</td></tr>`
+    ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded</td></tr>`
     : `<tr><td colspan="2" class="empty">No evidence yet. Upload a file to start.</td></tr>`;
   return shell(
     "workspace",
-    `Cases <span>›</span> ${w.caseName || "Larkmoor Records Office"} <span>›</span> <b>Evidence</b>`,
+    crumb("Evidence"),
     null,
     `<div class="hd"><div><h1>Evidence</h1><p class="lede">Upload a file, then run analysis. Citations must match byte-for-byte.</p></div>
       <a class="btn primary${state.setup.highlightAnalyze ? " ring" : ""}" href="#/analyze" id="ws-analyze">${svg("list", 17)}Analyze</a></div>
@@ -504,7 +567,7 @@ function viewWorkspace() {
       </div>
       <aside class="card det">
         <div class="dh"><div class="eyebrow">Selected case</div><h2>${w.caseName || "Larkmoor Records Office"}</h2>
-          <div class="dm">${sampleLabel(w.evidenceName || "larkmoor")}${w.caseDesc || "File-transfer breach"}</div></div>
+          <div class="dm">${w.caseDesc || "File-transfer breach"}</div></div>
         <div class="dsec"><div class="dl">Encrypted at rest</div><p class="lede">Plaintext exists only in memory during analysis. The custody log stores fingerprints, not the file.</p></div>
       </aside>
     </div>`
@@ -555,13 +618,13 @@ function viewAnalyze() {
           <h2>Receipt ${a.receipt_id} recorded</h2>
           <p class="lede">Policy ${a.policy}. Storage +${a.storage_delta} bytes.</p>
           <p><a class="lnk" href="#/receipt/${a.receipt_id}">Open receipt</a>
-          · <a class="lnk" href="${explorerTx(a.tx)}" target="_blank" rel="noreferrer">view transaction</a></p>
+          ${a.tx ? `· <a class="lnk" href="${explorerTx(a.tx)}" target="_blank" rel="noreferrer">view transaction</a>` : ""}</p>
           <p class="mono mut">salt ${a.salt}</p>
         </div>`
     : "";
   return shell(
     "analyze",
-    'Cases <span>›</span> Larkmoor <span>›</span> <b>Analysis</b>',
+    crumb("Analysis"),
     null,
     `<div class="hd"><div><h1>Run analysis</h1><p class="lede">One request: upload, TEE, provider_tee, dcap-qvl, policy, then record_finding.</p></div></div>
     <div class="card" style="padding:18px 20px">
@@ -579,35 +642,55 @@ function viewAnalyze() {
 }
 
 function viewReceipt() {
-  const id = Number(state.arg);
-  const r = (state.status?.receipts || []).find((x) => Number(x.id) === id) || state.selectedReceipt;
-  if (state.arg && !r) {
-    fetch(`/api/receipt/${id}`)
-      .then((x) => x.json())
-      .then((d) => {
-        state.selectedReceipt = d;
-        render();
-      });
+  const list = state.status?.receipts || [];
+  const id = state.arg !== undefined && state.arg !== "" ? Number(state.arg) : list.at(-1)?.id;
+  if (id === undefined || Number.isNaN(Number(id))) {
+    return shell("receipt", "<b>Custody log</b>", null, `<p class="lede">No receipt selected.</p>`);
   }
-  const rec = r || (state.status?.receipts || [])[(state.status?.receipts || []).length - 1];
+  const loaded = id in state.receipts;
+  if (!loaded) getReceipt(id).then(render);
+  const full = state.receipts[id];
+  const summary = list.find((x) => Number(x.id) === Number(id));
+  const rec = full || summary;
   if (!rec) {
-    return shell("receipt", "<b>Receipt</b>", null, `<p class="lede">No receipt selected.</p>`);
+    return shell("receipt", crumb(`Receipt ${id}`), null,
+      `<p class="lede">${loaded ? `Receipt ${id} was not found on chain.` : "Loading receipt…"}</p>`);
   }
   const f = rec.finding || {};
+  const wait = loaded ? "—" : "Loading…";
+  const hx = (b) => (b ? copyVal(hexOf(b)) : wait);
+  const list2 = (arr) => (arr && arr.length ? arr.map((b) => `<div>${copyVal(hexOf(b))}</div>`).join("") : wait);
+  const ts = rec.timestamp_ns ? new Date(Number(rec.timestamp_ns) / 1e6).toISOString().replace(".000", "") : "—";
+  const contract = state.status?.contract || "ftcust15e434.testnet";
+  const findingRows = rec.finding || !loaded ? `
+        <div><dt>Model</dt><dd class="mono">${esc(f.model_id || wait)}</dd></div>
+        <div><dt>TCB status</dt><dd class="mono">${esc(f.tcb_status ? kindLabel(f.tcb_status) : wait)}</dd></div>
+        <div><dt>Nonce</dt><dd class="mono">${hx(f.nonce)}</dd></div>
+        <div><dt>Finding hash</dt><dd class="mono">${hx(f.finding_hash)}</dd></div>
+        <div><dt>Citation hashes</dt><dd class="mono">${list2(f.citation_hashes)}</dd></div>
+        <div><dt>Request hash</dt><dd class="mono">${hx(f.request_hash)}</dd></div>
+        <div><dt>Response hash</dt><dd class="mono">${hx(f.response_hash)}</dd></div>
+        <div><dt>Gateway report hash</dt><dd class="mono">${hx(f.gateway_report_hash)}</dd></div>
+        <div><dt>Model report hash</dt><dd class="mono">${hx(f.model_report_hash)}</dd></div>
+        <div><dt>Signer public key (ed25519)</dt><dd class="mono">${hx(f.signer_pubkey)}</dd></div>
+        <div><dt>Signature</dt><dd class="mono">${hx(f.signature)}</dd></div>` : "";
   return shell(
     "receipt",
-    `Cases <span>›</span> <b>Receipt ${rec.id}</b>`,
+    crumb(`Receipt ${rec.id}`),
     null,
-    `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${kindLabel(rec.kind)} · ${rec.case_id} · ${rec.actor}</p></div>
-      ${verdictChip(rec.policy_verdict)}</div>
+    `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${esc(kindLabel(rec.kind))} · ${esc(rec.case_id)} · ${esc(rec.actor)}</p></div>
+      ${rec.policy_verdict ? verdictChip(rec.policy_verdict) : ""}</div>
     <div class="card lim">
       <dl class="kv">
-        <div><dt>Kind</dt><dd>${kindLabel(rec.kind)}</dd></div>
-        <div><dt>Verdict</dt><dd>${kindLabel(rec.policy_verdict)}</dd></div>
-        <div><dt>Model</dt><dd class="mono">${f.model_id || "—"}</dd></div>
-        <div><dt>Nonce</dt><dd class="mono">${shortHash(f.nonce)}</dd></div>
-        <div><dt>Finding hash</dt><dd class="mono">${shortHash(f.finding_hash)}</dd></div>
-        <div><dt>Evidence</dt><dd class="mono">${shortHash(rec.evidence_commitments?.[0])}</dd></div>
+        <div><dt>Kind</dt><dd>${esc(kindLabel(rec.kind))}</dd></div>
+        <div><dt>Verdict</dt><dd>${esc(kindLabel(rec.policy_verdict))}</dd></div>
+        <div><dt>Reason</dt><dd class="mono">${esc(rec.reason ?? "—")}</dd></div>
+        <div><dt>Recorded (UTC)</dt><dd class="mono">${ts}</dd></div>
+        <div><dt>Evidence commitments</dt><dd class="mono">${list2(rec.evidence_commitments)}</dd></div>
+        ${findingRows}
+        <div><dt>Previous receipt hash</dt><dd class="mono">${hx(rec.prev_hash)}</dd></div>
+        <div><dt>On chain</dt><dd><a class="lnk" href="${NEARBLOCKS}/address/${contract}" target="_blank" rel="noreferrer">${esc(contract)} on NearBlocks ${svg("arrow", 13)}</a>
+          <span class="mut">Transaction link needs the tx hash, which the API does not store yet.</span></dd></div>
       </dl>
     </div>
     <form id="verify-form" class="card" style="padding:16px 20px">
@@ -632,10 +715,13 @@ function viewReceipt() {
 
 function viewFinding() {
   const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
-  const rec = findings[findings.length - 1];
+  const last = findings[findings.length - 1];
+  if (last && !(last.id in state.receipts)) getReceipt(last.id).then(render);
+  const rec = last ? state.receipts[last.id] || last : null;
+  const citeEmpty = last && !(last.id in state.receipts) ? "<p class='mut'>Loading…</p>" : "<p class='mut'>None</p>";
   return shell(
     "finding",
-    'Cases <span>›</span> <b>Finding</b>',
+    crumb("Findings"),
     null,
     rec
       ? `<div class="split">
@@ -645,7 +731,7 @@ function viewFinding() {
           <div class="dsec"><div class="dl">Citation hashes</div>
             ${(rec.finding?.citation_hashes || [])
               .map((h) => `<div class="hash" style="background:var(--h);border:1px solid var(--l);border-radius:6px;padding:6px 8px">${hexOf(h) || shortHash(h)}</div>`)
-              .join("") || "<p class='mut'>None</p>"}
+              .join("") || citeEmpty}
           </div>
           <div class="dsec"><a class="lnk" href="#/receipt/${rec.id}">Open receipt ${svg("arrow", 13)}</a></div>
         </div>
@@ -663,7 +749,7 @@ function viewCustody() {
   const rid = w.receiptId ?? 1;
   return shell(
     "custody",
-    'Cases <span>›</span> Larkmoor <span>›</span> <b>Custody check</b>',
+    crumb("Custody check"),
     null,
     `<div class="hd"><div><h1>Custody check</h1><p class="lede">Drop a file against a stored commitment. A mismatch is a custody break, not a crash.</p></div></div>
     <form id="custody-drop" class="card" style="padding:18px 20px;display:grid;gap:12px">
@@ -701,7 +787,7 @@ function viewSecurity() {
     : "";
   return shell(
     "security",
-    'Cases <span>›</span> Larkmoor <span>›</span> <b>Security</b>',
+    crumb("Security"),
     null,
     `<div class="hd"><div><div class="eyebrow">Security</div><h1>Can a stolen key move funds?</h1>
       <p class="lede">The app writer key is a function-call key. Try the four protocol rejections on testnet.</p></div></div>
@@ -731,25 +817,16 @@ function viewSecurity() {
 }
 
 function viewApprovals() {
-  const holds = holdReceipts(state.status);
-  const decided = new Set(
-    (state.status?.receipts || [])
-      .filter((r) => {
-        const k = kindLabel(r.kind);
-        return k === "Approval" || k === "Rejection";
-      })
-      .map((r) => Number(String(r.reason || "").match(/receipt=(\d+)/)?.[1]))
-      .filter((n) => Number.isFinite(n))
-  );
-  const pending = holds.filter((r) => !decided.has(Number(r.id)));
+  const pending = pendingHolds(state.status);
   const cards = pending
     .map((r) => {
-      const hashes = (r.finding?.citation_hashes || []).map((h) => `<div class="hash">${hexOf(h) || shortHash(h)}</div>`).join("");
-      const why = (r.reason || "P4 irreversible action: isolate_host");
+      const full = state.receipts[r.id] || r;
+      const hashes = (full.finding?.citation_hashes || []).map((h) => `<div class="hash">${hexOf(h)}</div>`).join("");
+      const why = r.reason || "Policy P4: irreversible actions wait for a human.";
       return `<article class="card det" style="padding:0">
-        <div class="dh"><div class="eyebrow">HOLD</div><h2>Isolate host xfer-01</h2>
+        <div class="dh"><div class="eyebrow">HOLD</div><h2>HOLD · receipt ${r.id}</h2>
           <div class="dm">${verdictChip(r.policy_verdict)} receipt ${r.id} · ${r.case_id}</div></div>
-        <div class="dsec"><div class="dl">Why it was held</div><p class="lede">${why}. Policy P4: irreversible actions wait for a human.</p></div>
+        <div class="dsec"><div class="dl">Why it was held</div><p class="lede">${esc(why)}</p></div>
         <div class="dsec"><div class="dl">Citations</div>${hashes || "<p class='mut'>On-chain citation hashes only</p>"}</div>
         <div class="dsec"><p class="lede">The app never performs isolate, block, delete, or notify. It only records your decision.</p>
           <form class="hold-form" data-id="${r.id}" style="display:grid;gap:10px">
@@ -766,7 +843,7 @@ function viewApprovals() {
     .join("");
   return shell(
     "approvals",
-    "<b>Approvals</b>",
+    crumb("Approvals"),
     null,
     `<div class="hd"><div><h1>Approvals</h1><p class="lede">HOLD receipts from the contract. Reject is the default. The app never performs the action itself.</p></div></div>
     ${cards || `<div class="card" style="padding:24px;text-align:center"><p class="lede empty">No actions waiting for approval</p></div>`}`
@@ -775,12 +852,14 @@ function viewApprovals() {
 
 function viewAccess() {
   const w = state.walk;
-  const denied = (w.denied || [])
-    .map((d) => `<tr><td class="mono">${d.account}</td><td>OpenDenied</td><td class="mono">${d.tx || "—"}</td></tr>`)
+  const denied = (state.status?.receipts || [])
+    .filter((r) => kindLabel(r.kind) === "OpenDenied")
+    .map((r) => `<tr><td class="mono">${esc(r.actor)}</td><td>OpenDenied · <span class="mono">${esc(r.reason || "")}</span></td>
+      <td><a class="lnk" href="#/receipt/${r.id}">Receipt ${r.id} ${svg("arrow", 13)}</a></td></tr>`)
     .join("");
   return shell(
     "access",
-    "<b>Access</b>",
+    crumb("Access"),
     null,
     `<div class="hd"><div><h1>Access</h1><p class="lede">Who can open this case. Revoking cannot un-see files already opened.</p></div></div>
     <div class="card tbl"><div class="tbar"><h2>Grantees</h2></div>
@@ -802,26 +881,56 @@ function viewAccess() {
       <button class="btn" type="submit">Request open</button>
     </form>
     <div class="card tbl"><div class="tbar"><h2>Denied attempts</h2></div>
-      <table><thead><tr><th>Account</th><th>Kind</th><th>Tx</th></tr></thead>
-      <tbody>${denied || `<tr><td colspan="3" class="empty">No denied attempts yet. Request open without a grant to record OpenDenied.</td></tr>`}</tbody></table>
+      <table><thead><tr><th>Account</th><th>Kind</th><th>Receipt</th></tr></thead>
+      <tbody>${denied || `<tr><td colspan="3" class="empty">No denied attempts on chain.</td></tr>`}</tbody></table>
     </div>`
   );
 }
 
 function viewReports() {
+  if (!state.exportData && !state.exportLoading) {
+    state.exportLoading = true;
+    fetch("/api/export")
+      .then((r) => r.json())
+      .then((d) => { state.exportData = d; })
+      .catch((e) => { state.exportMsg = `Could not load the export: ${e.message}`; })
+      .finally(() => { state.exportLoading = false; render(); });
+  }
+  const x = state.exportData;
+  const s = x?.summary || {};
+  const v = x?.verification || {};
+  const n = (k) => (x ? s[k] ?? "—" : "…");
+  const rows = (x?.timeline || [])
+    .map((r) => `<tr><td class="mono ts">${r.id}</td><td>${esc(r.kind)}</td><td>${r.verdict ? verdictChip(r.verdict) : "—"}</td>
+      <td class="mono acc">${esc(r.actor)}</td><td><a class="lnk" href="#/receipt/${r.id}">Open ${svg("arrow", 13)}</a></td></tr>`)
+    .join("");
   return shell(
     "reports",
-    "<b>Reports</b>",
+    crumb("Case report"),
     null,
-    `<div class="hd"><div><h1>Case report</h1><p class="lede">Triage tool, not court-certified. Attestation notes travel with the export.</p></div>
+    `<div class="hd"><div><h1>Case report</h1><p class="lede">Triage tool, not court-certified. The PDF is built from the same export as the JSON.</p></div>
       <div style="display:flex;gap:8px">
         <button class="btn primary" id="export-json">${svg("report", 16)}Export JSON</button>
         <button class="btn" id="export-pdf">${svg("report", 16)}Export PDF</button>
       </div></div>
-    <div class="card" style="padding:18px 20px">
-      <p>Receipts on chain: <b>${state.status?.receipt_count ?? "—"}</b></p>
-      <p class="lede">JSON and PDF share the same export. Triage tool, not court-certified. Sample items are FICTIONAL.</p>
-    </div>`
+    ${state.exportMsg ? `<p class="wiz-err">${esc(state.exportMsg)}</p>` : ""}
+    <div class="kpis">
+      <div class="kpi neutral"><div class="kh">Receipts on chain</div><div class="kv">${n("receipt_count")}</div></div>
+      <div class="kpi flag"><div class="kh">Findings</div><div class="kv">${n("finding_count")}</div></div>
+      <div class="kpi hold"><div class="kh">HOLD (waiting / total)</div><div class="kv">${n("pending_hold_count")} / ${n("hold_count")}</div></div>
+      <div class="kpi block"><div class="kh">Decisions</div><div class="kv">${x ? (s.approval_count ?? 0) + (s.rejection_count ?? 0) : "…"}</div><div class="ks">${x ? `${s.approval_count ?? 0} approved · ${s.rejection_count ?? 0} rejected` : ""}</div></div>
+    </div>
+    <div class="card lim"><dl class="kv">
+      <div><dt>Contract</dt><dd class="mono">${esc(s.contract || "—")}</dd></div>
+      <div><dt>Export generated (UTC)</dt><dd class="mono">${esc(x?.generated_at || "…")}</dd></div>
+      <div><dt>R1 citations</dt><dd>${esc(v.r1 || "…")}</dd></div>
+      <div><dt>R2 writer key</dt><dd>${esc(v.r2 || "…")}</dd></div>
+      <div><dt>R3 signature</dt><dd>${esc(v.r3 || "…")}</dd></div>
+      <div><dt>TCB policy</dt><dd>${esc(v.tcb || "…")}</dd></div>
+    </dl></div>
+    <div class="card tbl"><div class="tbar"><h2>Timeline</h2><span class="cnt">${x?.timeline?.length ?? "…"}</span></div>
+      <table><thead><tr><th>Id</th><th>Kind</th><th>Verdict</th><th>Actor</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5" class="empty">${x ? "No receipts" : "Loading…"}</td></tr>`}</tbody></table></div>`
   );
 }
 
@@ -831,7 +940,7 @@ function wizardPane() {
   if (s.step === "connect") {
     return `<h1>Connect</h1>
       <p class="lede">Sign in with a NEAR testnet wallet. The server writer key still signs receipts.</p>
-      ${wlt.error ? `<p class="wiz-err">${esc(wlt.error)} <button class="btn sm" type="button" id="connect-btn">Try again</button></p>` : ""}
+      ${wlt.error ? `<p class="wiz-err">${esc(wlt.error)}. Press Connect wallet to try again.</p>` : ""}
       <button class="btn primary" type="button" id="connect-btn">${svg("link", 16)}Connect wallet</button>
       <p><button class="btn ghost" type="button" id="wiz-nowallet">Continue without wallet</button></p>`;
   }
@@ -843,7 +952,7 @@ function wizardPane() {
   }
   if (s.step === "source") {
     return `<h1>Choose a source</h1>
-      <p class="lede">Upload evidence or load the sample case. Sample case: training data.</p>
+      <p class="lede">Upload evidence or load the sample case.</p>
       <input type="file" name="file" id="wiz-file" hidden />
       <div class="src-grid">
         <button type="button" class="src-card${s.source === "upload" ? " on" : ""}" id="wiz-upload">
@@ -859,7 +968,7 @@ function wizardPane() {
         s.commitment
           ? `<div class="dsec" style="padding:12px 0"><div class="dl">Salted commitment</div>
              <p>${copyVal(s.commitment)}</p>
-             <p class="lede">${esc(s.evidenceName)}${sampleLabel(s.evidenceName)}</p></div>`
+             <p class="lede">${esc(s.evidenceName)}</p></div>`
           : `<p class="lede empty">No evidence yet. Upload a file or load the sample.</p>`
       }`;
   }
@@ -1093,7 +1202,7 @@ function bindWalk() {
         ...defaultWalk(),
         step: "connect",
         caseName: "Larkmoor Records Office",
-        caseDesc: "FICTIONAL MOVEit-style file-transfer incident",
+        caseDesc: "File-transfer breach",
         caseId: "larkmoor-demo",
       };
       persistWalk();
@@ -1266,6 +1375,9 @@ function bind() {
         a.setSelectionRange(a.value.length, a.value.length);
       }
     };
+    sf.onkeydown = (e) => {
+      if (e.key === "Escape") { state.filterQ = ""; render(); }
+    };
   }
   bindWalk();
   const evf = document.getElementById("ev-form");
@@ -1408,9 +1520,6 @@ function bind() {
           }),
         })
       ).json();
-      state.walk.denied = state.walk.denied || [];
-      state.walk.denied.push({ account: state.status?.writer || "unknown", tx: data.tx });
-      persistWalk();
       await loadStatus();
     };
   }
@@ -1479,14 +1588,40 @@ function bind() {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "custody-log.json";
+      a.download = "custos-seal-larkmoor-demo-export.json";
       a.click();
     };
   }
   const pdf = document.getElementById("export-pdf");
   if (pdf) {
-    pdf.onclick = () => {
-      location.href = "/api/export.pdf";
+    pdf.onclick = async () => {
+      pdf.disabled = true;
+      pdf.textContent = "Building PDF…";
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 30000);
+      try {
+        const res = await fetch("/api/export.pdf", { signal: ctl.signal });
+        const type = res.headers.get("content-type") || "";
+        if (!res.ok || !type.includes("application/pdf")) {
+          let msg = `HTTP ${res.status}`;
+          try { const j = await res.json(); msg = j.detail || j.error || msg; } catch {}
+          throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "custos-seal-larkmoor-demo-report.pdf";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        state.exportMsg = null;
+      } catch (e) {
+        state.exportMsg = e.name === "AbortError"
+          ? "PDF export timed out after 30 s. Export JSON has the same data."
+          : `PDF export failed: ${e.message}`;
+      } finally {
+        clearTimeout(t);
+        render();
+      }
     };
   }
 }
