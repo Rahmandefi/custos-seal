@@ -475,7 +475,7 @@ function viewCases() {
 function viewWorkspace() {
   const w = state.walk;
   const files = w.evidenceName
-    ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded · <span class="fx">FICTIONAL</span></td></tr>`
+    ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded${sampleLabel(w.evidenceName)}</td></tr>`
     : `<tr><td colspan="2" class="empty">No evidence yet. Upload a file to start.</td></tr>`;
   return shell(
     "workspace",
@@ -504,7 +504,7 @@ function viewWorkspace() {
       </div>
       <aside class="card det">
         <div class="dh"><div class="eyebrow">Selected case</div><h2>${w.caseName || "Larkmoor Records Office"}</h2>
-          <div class="dm"><span class="fx">FICTIONAL</span>${w.caseDesc || "File-transfer breach"}</div></div>
+          <div class="dm">${sampleLabel(w.evidenceName || "larkmoor")}${w.caseDesc || "File-transfer breach"}</div></div>
         <div class="dsec"><div class="dl">Encrypted at rest</div><p class="lede">Plaintext exists only in memory during analysis. The custody log stores fingerprints, not the file.</p></div>
       </aside>
     </div>`
@@ -990,6 +990,8 @@ function bindSetup() {
       e.preventDefault();
       state.setup.skipped = true;
       persistSetup();
+      state.walk.skipped = true;
+      persistWalk();
       location.hash = "#/cases";
       state.view = "cases";
       render();
