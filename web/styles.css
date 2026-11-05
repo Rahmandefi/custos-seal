@@ -248,7 +248,7 @@
 .wiz-body{padding:22px 22px 18px; display:grid; gap:16px}
 .wiz-nav{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
 .wiz-foot{margin:0; text-align:center; max-width:480px; color:#8E9AAE; font-size:12.5px}
-.wiz-body .btn.primary{min-width:180px}
+.wiz-body>.btn.primary{min-width:180px;width:fit-content;justify-self:start}
 .wiz-body .btn.ghost{background:transparent}
 .brand{
   flex:0 1 auto;
