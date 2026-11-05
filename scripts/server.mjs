@@ -34,14 +34,70 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = process.env.OUT_DIR || (process.env.VERCEL ? "/tmp/custos-out" : join(ROOT, "out"));
 const WEB = join(ROOT, "web");
 const PORT = Number(process.env.PORT || 8787);
+const ASSET_V = (process.env.VERCEL_GIT_COMMIT_SHA || process.env.ASSET_V || "dev").slice(0, 8);
+const WRITE_PATHS = new Set([
+  "/analyze",
+  "/custody/grant",
+  "/custody/open",
+  "/custody/check",
+  "/custody/hold",
+  "/api/security",
+]);
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".ico": "image/x-icon",
   ".json": "application/json",
 };
+
+let statusCache = { at: 0, body: null };
+function invalidateStatus() {
+  statusCache = { at: 0, body: null };
+}
+
+function writeGate(req) {
+  const token = process.env.CUSTOS_WRITE_TOKEN;
+  if (!token) return { ok: false, code: 403, error: "Writes disabled on the public demo" };
+  const raw = String(req.headers.authorization || "");
+  const got = raw.replace(/^Bearer\s+/i, "").trim();
+  if (got !== token) return { ok: false, code: 401, error: "unauthorized" };
+  return { ok: true };
+}
+
+function summarizeReceipt(r) {
+  return {
+    id: r.id,
+    kind: r.kind,
+    policy_verdict: r.policy_verdict,
+    actor: r.actor,
+    timestamp_ns: r.timestamp_ns,
+    case_id: r.case_id,
+    reason: r.reason,
+  };
+}
+
+async function statusPayload() {
+  if (statusCache.body && Date.now() - statusCache.at < 12000) return statusCache.body;
+  const n = await receiptCount();
+  const acct = await viewAccount(CONTRACT);
+  const receipts = [];
+  for (let i = 0; i < n; i++) receipts.push(summarizeReceipt(await getReceipt(i)));
+  statusCache = {
+    at: Date.now(),
+    body: {
+      contract: CONTRACT,
+      writer: WRITER,
+      owner: OWNER,
+      receipt_count: n,
+      storage_usage: acct.storage_usage,
+      receipts,
+    },
+  };
+  return statusCache.body;
+}
 
 function hexToBytesMaybeLocal(v) {
   if (Array.isArray(v)) return v;
@@ -98,8 +154,17 @@ async function handleAnalyze(req, forceHold) {
 export async function handleRequest(req, res) {
   try {
     await mkdir(OUT, { recursive: true });
+    const pathOnly = (req.url || "/").split("?")[0];
+    if (req.method === "POST" && WRITE_PATHS.has(pathOnly)) {
+      const gate = writeGate(req);
+      if (!gate.ok) {
+        json(res, gate.code, { error: gate.error });
+        return;
+      }
+    }
     if (req.method === "POST" && req.url === "/analyze") {
       const result = await handleAnalyze(req, false);
+      invalidateStatus();
       json(res, 200, {
         receipt_id: result.receiptId,
         tx: result.tx,
@@ -133,6 +198,7 @@ export async function handleRequest(req, res) {
       const after = await receiptCount();
       const receipt_id = after - 1;
       await rememberTx(OUT, receipt_id, sent.tx);
+      invalidateStatus();
       json(res, 200, {
         tx: sent.tx,
         method: "approve_action",
@@ -154,6 +220,7 @@ export async function handleRequest(req, res) {
         },
         { deposit: "0.01 NEAR", outDir: OUT }
       );
+      invalidateStatus();
       json(res, 200, { tx: sent.tx, method: "request_open" });
       return;
     }
@@ -170,6 +237,7 @@ export async function handleRequest(req, res) {
         },
         { outDir: OUT }
       );
+      invalidateStatus();
       json(res, 200, { tx: sent.tx, method: "record_custody_check" });
       return;
     }
@@ -178,20 +246,7 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "GET" && req.url === "/api/status") {
-      const n = await receiptCount();
-      const acct = await viewAccount(CONTRACT);
-      const receipts = [];
-      for (let i = 0; i < n; i++) {
-        receipts.push(await getReceipt(i));
-      }
-      json(res, 200, {
-        contract: CONTRACT,
-        writer: WRITER,
-        owner: OWNER,
-        receipt_count: n,
-        storage_usage: acct.storage_usage,
-        receipts,
-      });
+      json(res, 200, await statusPayload());
       return;
     }
     if (req.method === "GET" && req.url?.startsWith("/api/receipt/")) {
@@ -202,6 +257,7 @@ export async function handleRequest(req, res) {
     if (req.method === "POST" && req.url === "/api/security") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
       json(res, 200, await runAttack(j.kind));
+      invalidateStatus();
       return;
     }
     if (req.method === "GET" && (req.url === "/api/sample" || req.url?.startsWith("/api/sample?"))) {
@@ -269,6 +325,7 @@ export async function handleRequest(req, res) {
         { case_id: j.case_id, account: j.account },
         { outDir: OUT }
       );
+      invalidateStatus();
       json(res, 200, { tx: sent.tx, method: "grant" });
       return;
     }
@@ -306,14 +363,27 @@ export async function handleRequest(req, res) {
       try {
         const st = await stat(file);
         if (!st.isFile()) throw new Error("dir");
-        const buf = await readFile(file);
-        res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream" });
+        let buf = await readFile(file);
+        const ext = extname(file);
+        const headers = { "Content-Type": MIME[ext] || "application/octet-stream" };
+        if (ext === ".html") {
+          buf = Buffer.from(
+            buf
+              .toString("utf8")
+              .replaceAll("__ASSET_V__", ASSET_V)
+          );
+          headers["Cache-Control"] = "no-store";
+        } else if ([".js", ".css", ".svg", ".ico", ".png"].includes(ext)) {
+          headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        }
+        res.writeHead(200, headers);
         res.end(buf);
         return;
       } catch {
         if (req.url === "/" || !req.url.includes(".")) {
-          const buf = await readFile(join(WEB, "index.html"));
-          res.writeHead(200, { "Content-Type": MIME[".html"] });
+          const raw = await readFile(join(WEB, "index.html"), "utf8");
+          const buf = Buffer.from(raw.replaceAll("__ASSET_V__", ASSET_V));
+          res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" });
           res.end(buf);
           return;
         }

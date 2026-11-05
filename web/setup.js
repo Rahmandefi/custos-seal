@@ -1,11 +1,11 @@
-/** Screen 1 first-run wizard. Existing features only. Progress in localStorage. */
+/** One first-run wizard. Progress in localStorage. Wallet state lives in custos-wallet. */
 export const SETUP_LS = "custos-setup";
 
 export const SETUP_STEPS = [
-  { id: "connect", n: 1, label: "Connect wallet" },
-  { id: "source", n: 2, label: "Choose a source" },
-  { id: "case", n: 3, label: "Create the case" },
-  { id: "confirm", n: 4, label: "Confirm and go" },
+  { id: "connect", n: 1, label: "Connect" },
+  { id: "connected", n: 2, label: "Connected" },
+  { id: "source", n: 3, label: "Source" },
+  { id: "confirm", n: 4, label: "Confirm" },
 ];
 
 export function defaultSetup() {
@@ -13,13 +13,13 @@ export function defaultSetup() {
     step: "connect",
     completed: false,
     skipped: false,
-    connected: false,
+    noWallet: false,
     source: null,
     evidenceName: "",
     salt: "",
     commitment: "",
-    caseName: "",
-    caseDesc: "",
+    caseName: "Larkmoor Records Office",
+    caseDesc: "File-transfer breach",
     caseId: "larkmoor-demo",
     highlightAnalyze: false,
   };
@@ -27,7 +27,10 @@ export function defaultSetup() {
 
 export function loadSetup() {
   try {
-    return { ...defaultSetup(), ...JSON.parse(localStorage.getItem(SETUP_LS) || "{}") };
+    const s = { ...defaultSetup(), ...JSON.parse(localStorage.getItem(SETUP_LS) || "{}") };
+    if (s.step === "case") s.step = "confirm";
+    if (!SETUP_STEPS.some((x) => x.id === s.step)) s.step = "connect";
+    return s;
   } catch {
     return defaultSetup();
   }
@@ -51,16 +54,10 @@ export function setupPrev(step) {
   return SETUP_STEPS[Math.max(0, i - 1)].id;
 }
 
-export function setupValid(s) {
-  if (s.step === "connect") return Boolean(s.connected);
+export function setupValid(s, wallet) {
+  if (s.step === "connect") return false;
+  if (s.step === "connected") return Boolean(wallet?.connected && wallet.accountId);
   if (s.step === "source") return Boolean(s.commitment && s.evidenceName);
-  if (s.step === "case") return Boolean(s.caseName.trim() && s.caseDesc.trim());
-  if (s.step === "confirm") return s.connected && s.commitment && s.caseName;
+  if (s.step === "confirm") return Boolean(s.commitment);
   return false;
-}
-
-export function shortAccount(id) {
-  const a = String(id || "");
-  if (a.length < 18) return a;
-  return `${a.slice(0, 8)}…${a.slice(-8)}`;
 }

@@ -17,6 +17,11 @@
     "key-scope": "node scripts/key-scope-rpc.mjs"
   },
   "dependencies": {
+    "@near-wallet-selector/core": "8.10.2",
+    "@near-wallet-selector/here-wallet": "8.10.2",
+    "@near-wallet-selector/meteor-wallet": "8.10.2",
+    "@near-wallet-selector/modal-ui": "8.10.2",
+    "@near-wallet-selector/my-near-wallet": "8.10.2",
     "@nearai/inference-sdk": "0.2.1",
     "near-api-js": "^7.4.0",
     "tweetnacl": "^1.0.3"

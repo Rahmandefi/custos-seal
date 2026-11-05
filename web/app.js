@@ -21,8 +21,17 @@ import {
   setupNext,
   setupPrev,
   setupValid,
-  shortAccount,
 } from "./setup.js";
+import {
+  loadWallet,
+  saveWallet,
+  defaultWallet,
+  shortAccount,
+  openWalletPicker,
+  signOutWallet,
+  syncFromSelector,
+  ensureSelector,
+} from "./wallet.js";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -57,6 +66,7 @@ const svg = (n, s = 16, w = 2) =>
 const state = {
   view: "cases",
   status: null,
+  statusLoading: true,
   error: null,
   analyze: null,
   verify: null,
@@ -65,9 +75,16 @@ const state = {
   file: null,
   walk: loadWalk(),
   setup: loadSetup(),
+  wallet: loadWallet(),
   menuOpen: false,
   grantMsg: null,
   custodyMsg: null,
+  searchQ: "",
+  searchOpen: false,
+  searchHi: 0,
+  filterQ: "",
+  busy: null,
+  fatal: null,
 };
 
 function persistWalk() {
@@ -78,6 +95,10 @@ function persistSetup() {
   saveSetup(state.setup);
 }
 
+function persistWallet() {
+  saveWallet(state.wallet);
+}
+
 function setupOpen() {
   const s = state.setup;
   return !s.completed && !s.skipped;
@@ -86,23 +107,12 @@ function setupOpen() {
 function route() {
   state.walk = loadWalk();
   state.setup = loadSetup();
+  state.wallet = loadWallet();
   const h = location.hash.replace(/^#\/?/, "");
   if (setupOpen() && (!h || h === "setup" || h === "land")) {
     state.view = "setup";
     state.arg = undefined;
     render();
-    return;
-  }
-  const w = state.walk;
-  if (!h && !w.completed && !w.skipped && !setupOpen()) {
-    w.step = w.step || "land";
-    persistWalk();
-    if (w.step === "land") {
-      state.view = "land";
-      render();
-      return;
-    }
-    location.hash = `#/${routeForStep(w.step)}`;
     return;
   }
   const [view, arg] = (h || "cases").split("/");
@@ -111,13 +121,24 @@ function route() {
   render();
 }
 
+let statusOnce = false;
 async function loadStatus() {
+  state.statusLoading = true;
   try {
     state.status = await (await fetch("/api/status")).json();
+    state.statusLoading = false;
   } catch (e) {
     state.error = String(e.message);
+    state.statusLoading = false;
   }
   render();
+}
+
+function writeHeaders(extra = {}) {
+  const t = sessionStorage.getItem("custos-write-token") || "";
+  const h = { ...extra };
+  if (t) h.Authorization = `Bearer ${t}`;
+  return h;
 }
 
 function kindLabel(k) {
@@ -151,6 +172,22 @@ function shortHash(h) {
   return `${s.slice(0, 8)}…${s.slice(-8)}`;
 }
 
+function esc(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function copyVal(full) {
+  const s = String(full || "");
+  if (!s) return "—";
+  const vis = s.length > 20 ? `${s.slice(0, 8)}…${s.slice(-8)}` : s;
+  return `<span class="copyval" title="${esc(s)}"><span class="mono">${esc(vis)}</span>
+    <button type="button" class="copy" data-copy="${encodeURIComponent(s)}">${svg("copy", 13)}Copy</button></span>`;
+}
+
 function hexOf(arr) {
   if (!arr) return "";
   if (typeof arr === "string") return arr;
@@ -178,39 +215,120 @@ function rail(active) {
   </nav>`;
 }
 
+function sampleLabel(name) {
+  const n = String(name || "");
+  return /larkmoor|sample/i.test(n) ? ` <span class="fx">Sample case: training data</span>` : "";
+}
+
 function tree(active) {
-  const n = state.status?.receipt_count ?? "—";
+  const n = state.statusLoading ? "…" : state.status?.receipt_count ?? "—";
+  const q = (state.filterQ || "").toLowerCase();
+  const items = [
+    ["cases", "folder", "All cases", "#/cases", "1", ""],
+    ["approvals", "hold", "Approvals", "#/approvals", String(holdReceipts(state.status).length), "hold"],
+    ["access", "users", "Access", "#/access", "", ""],
+    ["security", "key", "Security", "#/security", "", ""],
+    ["workspace", "file", "Evidence files", "#/workspace", "2", ""],
+    ["custody", "hash", "Custody check", "#/custody", "", ""],
+    ["receipt", "link", "Custody log", "#/receipt", String(n), ""],
+    ["analyze", "list", "Run analysis", "#/analyze", "", ""],
+    ["finding", "flag", "Findings", "#/finding", "", ""],
+    ["reports", "report", "Case report", "#/reports", "", ""],
+  ].filter((it) => !q || it[2].toLowerCase().includes(q));
+  const link = ([id, icon, label, href, badge, bcls]) =>
+    `<a class="tn${active === id ? " on" : ""}" href="${href}">${svg(icon, 15)}${label}${
+      badge ? `<span class="c ${bcls}">${badge}</span>` : ""
+    }</a>`;
   return `<aside class="side">
     <div class="sh">
       <div class="k">Case</div>
       <div class="t">${state.setup.caseName || state.walk.caseName || "Larkmoor Records Office"}</div>
-      <div class="m">${state.setup.caseDesc || state.walk.caseDesc || "File-transfer breach"} <span class="fx">FICTIONAL</span></div>
+      <div class="m">${state.setup.caseDesc || state.walk.caseDesc || "File-transfer breach"}${sampleLabel(
+        state.setup.evidenceName || state.walk.evidenceName || "larkmoor"
+      )}</div>
     </div>
-    <div class="ssearch">${svg("search", 14)}Filter</div>
+    <label class="ssearch">${svg("search", 14)}<input id="side-filter" type="search" placeholder="Filter" value="${esc(
+      state.filterQ
+    )}" /></label>
     <div class="tree">
       <div class="tg">Cases</div>
-      <a class="tn${active === "cases" ? " on" : ""}" href="#/cases">${svg("folder", 15)}All cases<span class="c">1</span></a>
-      <a class="tn${active === "approvals" ? " on" : ""}" href="#/approvals">${svg("hold", 15)}Approvals<span class="c hold">${holdReceipts(state.status).length}</span></a>
-      <a class="tn${active === "access" ? " on" : ""}" href="#/access">${svg("users", 15)}Access</a>
-      <a class="tn${active === "security" ? " on" : ""}" href="#/security">${svg("key", 15)}Security</a>
+      ${items.filter((i) => ["cases", "approvals", "access", "security"].includes(i[0])).map(link).join("")}
       <div class="tg">Evidence</div>
-      <a class="tn${active === "workspace" ? " on" : ""}" href="#/workspace">${svg("file", 15)}Evidence files<span class="c">2</span></a>
-      <a class="tn${active === "custody" ? " on" : ""}" href="#/custody">${svg("hash", 15)}Custody check</a>
-      <a class="tn${active === "receipt" ? " on" : ""}" href="#/receipt">${svg("link", 15)}Custody log<span class="c">${n}</span></a>
+      ${items.filter((i) => ["workspace", "custody", "receipt"].includes(i[0])).map(link).join("")}
       <div class="tg">Analysis</div>
-      <a class="tn${active === "analyze" ? " on" : ""}" href="#/analyze">${svg("list", 15)}Run analysis</a>
-      <a class="tn${active === "finding" ? " on" : ""}" href="#/finding">${svg("flag", 15)}Findings</a>
+      ${items.filter((i) => ["analyze", "finding"].includes(i[0])).map(link).join("")}
       <div class="tg">Reports</div>
-      <a class="tn${active === "reports" ? " on" : ""}" href="#/reports">${svg("report", 15)}Case report</a>
+      ${items.filter((i) => i[0] === "reports").map(link).join("")}
     </div>
     <div class="sfoot">${svg("lock", 13)}Evidence encrypted at rest</div>
   </aside>`;
 }
 
+function lastAnalysisChip() {
+  const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
+  if (!findings.length) return `<span class="chip net">No analysis yet</span>`;
+  const v = kindLabel(findings[findings.length - 1].policy_verdict);
+  const ok = v === "Accept";
+  return `<span class="chip ${ok ? "ok" : "bad"}">${svg(ok ? "shieldok" : "flag", 13)}Last analysis: ${v || "Recorded"}</span>`;
+}
+
+function searchHits() {
+  const q = (state.searchQ || "").trim().toLowerCase();
+  if (!q) return [];
+  const hits = [];
+  for (const r of state.status?.receipts || []) {
+    const blob = JSON.stringify(r).toLowerCase();
+    if (blob.includes(q)) {
+      hits.push({ type: "Receipts", label: `Receipt ${r.id} · ${kindLabel(r.kind)}`, href: `#/receipt/${r.id}` });
+    }
+    if (String(r.actor || "").toLowerCase().includes(q)) {
+      hits.push({ type: "Accounts", label: r.actor, href: `#/receipt/${r.id}` });
+    }
+  }
+  const ev = state.walk.evidenceName || state.setup.evidenceName;
+  if (ev && ev.toLowerCase().includes(q)) {
+    hits.push({ type: "Evidence", label: ev, href: "#/workspace" });
+  }
+  const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
+  for (const r of findings) {
+    if ((r.reason || "").toLowerCase().includes(q) || "xfer".includes(q) && String(r.reason || "").toLowerCase().includes("xfer")) {
+      hits.push({ type: "Findings", label: `Finding ${r.id}`, href: `#/receipt/${r.id}` });
+    }
+  }
+  const seen = new Set();
+  return hits.filter((h) => {
+    const k = h.type + h.label + h.href;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 function top(crumb, chip) {
-  const w = state.walk;
-  const writer = state.status?.writer || "ftwriter15e434.testnet";
-  const short = shortAccount(writer);
+  const wlt = state.wallet;
+  const hits = state.searchOpen ? searchHits() : [];
+  const groups = {};
+  for (const h of hits) (groups[h.type] ||= []).push(h);
+  const drop =
+    state.searchOpen && state.searchQ
+      ? `<div class="sdrop" id="search-drop">${
+          hits.length
+            ? Object.entries(groups)
+                .map(
+                  ([g, list]) =>
+                    `<div class="sg">${g}</div>${list
+                      .map((h) => `<a class="si" href="${h.href}">${esc(h.label)}</a>`)
+                      .join("")}`
+                )
+                .join("")
+            : `<div class="nores">No matches for '${esc(state.searchQ)}'</div>`
+        }</div>`
+      : "";
+  const acct = wlt.connected && wlt.accountId
+    ? `<div class="acct" title="${esc(wlt.accountId)}"><span class="av">${esc(
+        wlt.accountId.slice(0, 2).toUpperCase()
+      )}</span>${esc(shortAccount(wlt.accountId))}</div>`
+    : `<button class="btn sm" type="button" id="top-connect">Connect</button>`;
   return `<header class="top">
     <a class="brand" href="#/cases">
       <span class="brand-name">Custos Seal</span>
@@ -219,18 +337,23 @@ function top(crumb, chip) {
     <span class="brand-sep" aria-hidden="true"></span>
     <div class="crumb">${crumb}</div>
     <div class="sp"></div>
-    <div class="gsearch">${svg("search", 15)}Search evidence, findings, accounts<kbd>/</kbd></div>
-    ${chip || `<span class="chip ok">${svg("shieldok", 13)}Last analysis: Verified</span>`}
+    <div class="gsearch">
+      ${svg("search", 15)}
+      <input id="gsearch" type="search" placeholder="Search evidence, findings, accounts…" value="${esc(
+        state.searchQ
+      )}" autocomplete="off" />
+      <kbd>/</kbd>
+      ${drop}
+    </div>
+    ${chip || lastAnalysisChip()}
     <span class="chip net">${svg("info", 13)}Testnet</span>
-    <div class="acct"><span class="av">FT</span>${short}</div>
-    ${
-      w.completed || w.skipped
-        ? `<div class="menuwrap"><button class="btn sm" id="top-menu" type="button">Menu</button>
-           <div class="menu" id="top-menu-list" ${state.menuOpen ? "" : "hidden"}>
-             <button type="button" id="restart-walk">Restart walkthrough</button>
-           </div></div>`
-        : ""
-    }
+    ${acct}
+    <div class="menuwrap"><button class="btn sm" id="top-menu" type="button">Menu</button>
+       <div class="menu" id="top-menu-list" ${state.menuOpen ? "" : "hidden"}>
+         ${wlt.connected ? `<button type="button" id="wallet-switch">Switch wallet</button>
+         <button type="button" id="wallet-out">Disconnect</button>` : `<button type="button" id="top-connect-m">Connect wallet</button>`}
+         <button type="button" id="restart-setup">Restart setup</button>
+       </div></div>
   </header>`;
 }
 
@@ -262,14 +385,12 @@ function walkDock() {
 }
 
 function statusBar(extra) {
-  const n = state.status?.receipt_count ?? "—";
+  const n = state.statusLoading ? "Loading…" : `${state.status?.receipt_count ?? 0} receipts`;
   return `<footer class="status">
-    <span>Custody log <b>${n}</b> receipts</span>
+    <span>Custody log — <b>${n}</b></span>
     <span class="sep"></span>
     <span>NEAR testnet · <span class="mono">${state.status?.contract || "ftcust15e434.testnet"}</span></span>
     ${extra ? `<span class="sep"></span>${extra}` : ""}
-    <span class="sp"></span>
-    <span>All case data <span class="fx">FICTIONAL</span></span>
   </footer>`;
 }
 
@@ -299,9 +420,11 @@ function viewLand() {
 function viewCases() {
   const w = state.walk;
   const holds = holdReceipts(state.status);
+  const fq = (state.filterQ || "").toLowerCase();
   const rows = (state.status?.receipts || [])
     .slice()
     .reverse()
+    .filter((r) => !fq || JSON.stringify(r).toLowerCase().includes(fq))
     .map(
       (r) => `<tr>
       <td class="mono ts">${r.id}</td>
@@ -339,9 +462,13 @@ function viewCases() {
       <a class="kpi flag" href="#/finding"><div class="kh"><span class="ki">${svg("flag", 17)}</span>Findings</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding").length}</div><div class="ks">On-chain Finding receipts</div></a>
       <a class="kpi neutral" href="#/workspace"><div class="kh"><span class="ki">${svg("folder", 17)}</span>Open cases</div><div class="kv">1</div><div class="ks">Larkmoor Records Office</div></a>
     </div>
-    <div class="card tbl"><div class="tbar"><h2>Custody log</h2><span class="cnt">${state.status?.receipt_count ?? "—"}</span></div>
+    <div class="card tbl"><div class="tbar"><h2>Custody log</h2><span class="cnt">${state.statusLoading ? "…" : state.status?.receipt_count ?? 0}</span></div>
     <table><thead><tr><th>Id</th><th>Kind</th><th>Case</th><th>Verdict</th><th>Actor</th><th></th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="6" class="empty">No receipts yet. Upload a file and run analysis.</td></tr>`}</tbody></table></div>`
+    <tbody>${
+      state.statusLoading
+        ? `<tr><td colspan="6" class="empty">Loading custody log…</td></tr>`
+        : rows || `<tr><td colspan="6" class="empty">No receipts yet. Upload a file and run analysis.</td></tr>`
+    }</tbody></table></div>`
   );
 }
 
@@ -700,99 +827,84 @@ function viewReports() {
 
 function wizardPane() {
   const s = state.setup;
-  const writer = state.status?.writer || "ftwriter15e434.testnet";
-  const short = shortAccount(writer);
+  const wlt = state.wallet;
   if (s.step === "connect") {
-    return `<div class="eyebrow">Step 1</div>
-      <h1>Connect wallet</h1>
-      <p class="lede">Uses the existing writer connection on this machine. Next unlocks once connected.</p>
-      <div class="wiz-acct">
-        <div class="acct"><span class="av">FT</span>${short}</div>
-        <span class="chip net">${svg("info", 13)}Testnet</span>
-      </div>
-      <dl class="kv" style="margin-top:16px">
-        <div><dt>Account</dt><dd class="mono">${writer}</dd></div>
-        <div><dt>Network</dt><dd><span class="chip net">Testnet</span></dd></div>
-      </dl>
-      <button class="btn primary" type="button" id="connect-btn">${s.connected ? svg("check", 16) + " Connected" : "Connect"}</button>`;
+    return `<h1>Connect</h1>
+      <p class="lede">Sign in with a NEAR testnet wallet. The server writer key still signs receipts.</p>
+      ${wlt.error ? `<p class="wiz-err">${esc(wlt.error)} <button class="btn sm" type="button" id="connect-btn">Try again</button></p>` : ""}
+      <button class="btn primary" type="button" id="connect-btn">${svg("link", 16)}Connect wallet</button>
+      <p><button class="btn ghost" type="button" id="wiz-nowallet">Continue without wallet</button></p>`;
+  }
+  if (s.step === "connected") {
+    const id = wlt.accountId || "";
+    return `<h1>Connected</h1>
+      <p class="lede">Wallet connected: <span class="mono">${esc(shortAccount(id))}</span></p>
+      <p class="mut">${copyVal(id)}</p>`;
   }
   if (s.step === "source") {
-    return `<div class="eyebrow">Step 2</div>
-      <h1>Choose a source</h1>
-      <p class="lede">Upload evidence for POST /analyze, or load the FICTIONAL Larkmoor sample. Nothing new is stored beyond the existing commitment.</p>
+    return `<h1>Choose a source</h1>
+      <p class="lede">Upload evidence or load the sample case. Sample case: training data.</p>
       <input type="file" name="file" id="wiz-file" hidden />
       <div class="src-grid">
         <button type="button" class="src-card${s.source === "upload" ? " on" : ""}" id="wiz-upload">
           <strong>Upload evidence</strong>
-          <span>Existing upload. Feeds POST /analyze.</span>
+          <span>Existing upload. Feeds analysis.</span>
         </button>
         <button type="button" class="src-card${s.source === "sample" ? " on" : ""}" id="wiz-sample">
-          <strong>Load the sample incident</strong>
-          <span>FICTIONAL MOVEit-style Larkmoor listing.</span>
+          <strong>Load the sample case</strong>
+          <span>Sample case: training data.</span>
         </button>
       </div>
       ${
         s.commitment
           ? `<div class="dsec" style="padding:12px 0"><div class="dl">Salted commitment</div>
-             <p class="hash">${s.commitment}</p>
-             <span class="fx">encrypted at rest</span>
-             <span class="fx">FICTIONAL</span>
-             <p class="lede">${s.evidenceName}</p></div>`
+             <p>${copyVal(s.commitment)}</p>
+             <p class="lede">${esc(s.evidenceName)}${sampleLabel(s.evidenceName)}</p></div>`
           : `<p class="lede empty">No evidence yet. Upload a file or load the sample.</p>`
       }`;
   }
-  if (s.step === "case") {
-    return `<div class="eyebrow">Step 3</div>
-      <h1>Create the case</h1>
-      <p class="lede">Name and short description. Sample items stay marked FICTIONAL.</p>
-      <form id="wiz-case" class="wiz-form">
-        <label class="dl" for="cname">Case name</label>
-        <input id="cname" name="name" required value="${s.caseName || ""}" />
-        <label class="dl" for="cdesc">Short description</label>
-        <input id="cdesc" name="desc" required value="${s.caseDesc || ""}" />
-      </form>
-      <p class="mut">Per-case file location is not stored in the app. TBD — not shown.</p>`;
-  }
-  return `<div class="eyebrow">Step 4</div>
-    <h1>Confirm and go</h1>
-    <p class="lede">Create the case and open the workspace with evidence loaded. Analyze is highlighted next.</p>
+  const acct = wlt.connected && wlt.accountId ? shortAccount(wlt.accountId) : "No wallet";
+  return `<h1>Confirm and go</h1>
+    <p class="lede">Open the case workspace with evidence loaded. Analyze is highlighted next.</p>
     <dl class="kv">
-      <div><dt>Account</dt><dd class="mono">${short}</dd></div>
-      <div><dt>Network</dt><dd><span class="chip net">Testnet</span></dd></div>
-      <div><dt>Source</dt><dd>${s.evidenceName || "—"} <span class="fx">FICTIONAL</span></dd></div>
-      <div><dt>Case</dt><dd>${s.caseName || "—"}</dd></div>
-      <div><dt>Description</dt><dd>${s.caseDesc || "—"}</dd></div>
+      <div><dt>Account</dt><dd>${esc(acct)}</dd></div>
+      <div><dt>Source</dt><dd>${esc(s.evidenceName || "—")}${s.source === "sample" ? sampleLabel("larkmoor") : ""}</dd></div>
+      <div><dt>Case</dt><dd>${esc(s.caseName || "Larkmoor Records Office")}</dd></div>
     </dl>`;
 }
 
 function viewSetup() {
   const s = state.setup;
-  const idx = setupIndex(s.step);
-  const valid = setupValid(s);
+  const idx = Math.max(0, setupIndex(s.step));
+  const valid = setupValid(s, state.wallet);
   const last = s.step === "confirm";
+  const primary =
+    s.step === "connect"
+      ? ""
+      : s.step === "connected"
+        ? `<button class="btn primary" type="button" id="wiz-next">Continue</button>`
+        : `<button class="btn primary" type="button" id="wiz-next" ${valid ? "" : "disabled"}>${
+            last ? "Start" : "Continue"
+          }</button>`;
   const steps = SETUP_STEPS.map((st, i) => {
     const cls = i === idx ? "on" : i < idx ? "done" : "";
     return `<li class="${cls}"><span>${st.n}</span>${st.label}</li>`;
   }).join("");
-  return shell(
-    "cases",
-    "<b>First-run setup</b>",
-    null,
-    `<div class="wiz card">
-      <ol class="wiz-steps" aria-label="Setup">${steps}</ol>
+  return `<div class="wiz-page">
+    <header class="wiz-logo">${svg("shield", 22)}<span>Custos Seal</span></header>
+    <div class="wiz-card card">
+      <ol class="wiz-steps-h" aria-label="Setup">${steps}</ol>
       <div class="wiz-body">
         ${wizardPane()}
         <div class="wiz-nav">
           <button class="btn" type="button" id="wiz-back"${idx === 0 ? " disabled" : ""}>Back</button>
           <button class="btn ghost" type="button" id="wiz-skip">Skip setup</button>
           <div class="sp"></div>
-          <button class="btn primary" type="button" id="wiz-next" ${valid ? "" : "disabled"}>${
-            last ? "Create case and start" : "Next"
-          }</button>
+          ${primary}
         </div>
       </div>
-    </div>`
-  );
+    </div>
+  </div>`;
 }
 
 const views = {
@@ -811,11 +923,19 @@ const views = {
 };
 
 function render() {
-  const fn = views[state.view] || viewCases;
   const el = document.getElementById("app");
-  el.classList.toggle("land-mode", state.view === "land");
-  el.innerHTML = fn();
-  bind();
+  try {
+    const fn = views[state.view] || viewCases;
+    el.classList.toggle("land-mode", state.view === "land" || state.view === "setup");
+    el.innerHTML = fn();
+    bind();
+  } catch (e) {
+    state.fatal = String(e.message || e);
+    el.innerHTML = `<div class="land"><div class="land-card"><h1>Something went wrong</h1><p class="lede">${esc(
+      state.fatal
+    )}</p><button class="btn" type="button" onclick="location.reload()">Reload</button></div></div>`;
+    console.error(e);
+  }
 }
 
 function goWalk(step) {
@@ -830,19 +950,66 @@ function goWalk(step) {
   location.hash = `#/${routeForStep(step)}`;
 }
 
+async function connectWalletFlow() {
+  state.wallet.error = "";
+  persistWallet();
+  try {
+    await openWalletPicker();
+    const sync = async () => {
+      const w = await syncFromSelector();
+      state.wallet = { ...state.wallet, ...w };
+      persistWallet();
+      if (state.wallet.connected && state.wallet.accountId && setupOpen() && state.setup.step === "connect") {
+        state.setup.step = "connected";
+        persistSetup();
+      }
+      render();
+    };
+    const { selector } = await ensureSelector();
+    const unsub = selector.store.observable.subscribe(() => {
+      sync();
+    });
+    setTimeout(() => {
+      try {
+        unsub();
+      } catch {}
+    }, 120000);
+    await sync();
+  } catch (e) {
+    const msg = String(e.message || e);
+    state.wallet.error = /cancel/i.test(msg) ? "Wallet connection cancelled" : "Wallet connection failed";
+    persistWallet();
+    render();
+  }
+}
+
 function bindSetup() {
   const skip = document.getElementById("wiz-skip");
   if (skip) {
-    skip.onclick = () => {
+    skip.onclick = (e) => {
+      e.preventDefault();
       state.setup.skipped = true;
       persistSetup();
       location.hash = "#/cases";
+      state.view = "cases";
+      render();
+    };
+  }
+  const nw = document.getElementById("wiz-nowallet");
+  if (nw) {
+    nw.onclick = () => {
+      state.setup.noWallet = true;
+      state.setup.step = "source";
+      persistSetup();
+      render();
     };
   }
   const back = document.getElementById("wiz-back");
   if (back) {
     back.onclick = () => {
-      state.setup.step = setupPrev(state.setup.step);
+      const prev = setupPrev(state.setup.step);
+      if (state.setup.noWallet && state.setup.step === "source") state.setup.step = "connect";
+      else state.setup.step = prev;
       persistSetup();
       render();
     };
@@ -851,11 +1018,6 @@ function bindSetup() {
   if (nxt) {
     nxt.onclick = () => {
       const s = state.setup;
-      if (s.step === "case") {
-        const f = document.getElementById("wiz-case");
-        s.caseName = f.name.value.trim();
-        s.caseDesc = f.desc.value.trim();
-      }
       if (s.step === "confirm") {
         s.completed = true;
         s.highlightAnalyze = true;
@@ -875,23 +1037,7 @@ function bindSetup() {
     };
   }
   const conn = document.getElementById("connect-btn");
-  if (conn && state.view === "setup") {
-    conn.onclick = () => {
-      state.setup.connected = true;
-      persistSetup();
-      render();
-    };
-  }
-  const cf = document.getElementById("wiz-case");
-  if (cf) {
-    cf.oninput = () => {
-      state.setup.caseName = cf.name.value.trim();
-      state.setup.caseDesc = cf.desc.value.trim();
-      persistSetup();
-      const n = document.getElementById("wiz-next");
-      if (n) n.disabled = !setupValid(state.setup);
-    };
-  }
+  if (conn) conn.onclick = () => connectWalletFlow();
   const wf = document.getElementById("wiz-file");
   if (wf) {
     wf.onchange = async () => {
@@ -1002,14 +1148,6 @@ function bindWalk() {
       goWalk(nextStep(w));
     };
   }
-  const conn = document.getElementById("connect-btn");
-  if (conn && state.view !== "setup") {
-    conn.onclick = () => {
-      state.walk.connected = true;
-      persistWalk();
-      render();
-    };
-  }
   const tm = document.getElementById("top-menu");
   if (tm) {
     tm.onclick = () => {
@@ -1017,14 +1155,32 @@ function bindWalk() {
       render();
     };
   }
-  const rw = document.getElementById("restart-walk");
+  const rw = document.getElementById("restart-setup");
   if (rw) {
     rw.onclick = () => {
-      state.walk = defaultWalk();
-      persistWalk();
-      goWalk("land");
+      state.setup = defaultSetup();
+      persistSetup();
+      location.hash = "#/setup";
+      state.view = "setup";
+      render();
     };
   }
+  const wo = document.getElementById("wallet-out");
+  if (wo) {
+    wo.onclick = async () => {
+      try {
+        state.wallet = await signOutWallet();
+      } catch {
+        state.wallet = defaultWallet();
+        persistWallet();
+      }
+      render();
+    };
+  }
+  const ws = document.getElementById("wallet-switch");
+  if (ws) ws.onclick = () => connectWalletFlow();
+  const tc = document.getElementById("top-connect") || document.getElementById("top-connect-m");
+  if (tc) tc.onclick = () => connectWalletFlow();
   const cf = document.getElementById("case-form");
   if (cf) {
     cf.oninput = () => {
@@ -1059,6 +1215,55 @@ async function commitFile(file, source) {
 }
 
 function bind() {
+  document.querySelectorAll("[data-copy]").forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(decodeURIComponent(b.dataset.copy || ""));
+        b.textContent = "Copied";
+      } catch {}
+    };
+  });
+  const gs = document.getElementById("gsearch");
+  if (gs) {
+    gs.oninput = () => {
+      state.searchQ = gs.value;
+      state.searchOpen = true;
+      const wrap = document.getElementById("search-drop");
+      /* live update via render would steal focus; patch drop */
+      state.searchOpen = true;
+      render();
+      const again = document.getElementById("gsearch");
+      if (again) {
+        again.focus();
+        again.setSelectionRange(again.value.length, again.value.length);
+      }
+    };
+    gs.onfocus = () => {
+      state.searchOpen = true;
+    };
+    gs.onkeydown = (e) => {
+      if (e.key === "Escape") {
+        state.searchOpen = false;
+        render();
+      }
+      if (e.key === "Enter") {
+        const hit = searchHits()[0];
+        if (hit) location.hash = hit.href;
+      }
+    };
+  }
+  const sf = document.getElementById("side-filter");
+  if (sf) {
+    sf.oninput = () => {
+      state.filterQ = sf.value;
+      render();
+      const a = document.getElementById("side-filter");
+      if (a) {
+        a.focus();
+        a.setSelectionRange(a.value.length, a.value.length);
+      }
+    };
+  }
   bindWalk();
   const evf = document.getElementById("ev-form");
   if (evf) {
@@ -1091,7 +1296,7 @@ function bind() {
       try {
         const res = await fetch("/analyze", {
           method: "POST",
-          headers: { "Content-Type": "application/octet-stream", "X-Case-Id": "larkmoor-demo" },
+          headers: writeHeaders({ "Content-Type": "application/octet-stream", "X-Case-Id": "larkmoor-demo" }),
           body: await file.arrayBuffer(),
         });
         const data = await res.json();
@@ -1175,7 +1380,7 @@ function bind() {
       const data = await (
         await fetch("/custody/grant", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ case_id: state.walk.caseId || "larkmoor-demo", account }),
         })
       ).json();
@@ -1192,7 +1397,7 @@ function bind() {
       const data = await (
         await fetch("/custody/open", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             case_id: state.walk.caseId || "larkmoor-demo",
             evidence_id: "E1",
@@ -1215,7 +1420,7 @@ function bind() {
       const data = await (
         await fetch("/custody/hold", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             case_id: "larkmoor-demo",
             receipt_id: Number(hf.dataset.id),
@@ -1242,7 +1447,7 @@ function bind() {
       const data = await (
         await fetch("/custody/check", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(body),
         })
       ).json();
@@ -1256,7 +1461,7 @@ function bind() {
       const data = await (
         await fetch("/api/security", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ kind: b.dataset.atk }),
         })
       ).json();
@@ -1284,5 +1489,26 @@ function bind() {
 }
 
 window.addEventListener("hashchange", route);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+    e.preventDefault();
+    const gs = document.getElementById("gsearch");
+    if (gs) {
+      gs.focus();
+      state.searchOpen = true;
+    }
+  }
+});
 route();
+syncFromSelector()
+  .then((w) => {
+    state.wallet = { ...state.wallet, ...w };
+    persistWallet();
+    if (setupOpen() && state.wallet.connected && state.setup.step === "connect") {
+      state.setup.step = "connected";
+      persistSetup();
+      render();
+    }
+  })
+  .catch(() => {});
 loadStatus();
