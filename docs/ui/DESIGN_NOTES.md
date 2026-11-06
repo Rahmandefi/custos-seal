@@ -11,7 +11,7 @@ The v1 sketches (`*.html`, `preview-*.png`, `src/`) are kept unchanged. The v1 n
 | `mockup-b-tamper-alert.png` | Custody check → hash mismatch | **Record custody break** |
 | `mockup-c1-stolen-key-confirm.png` | Security → stolen-key simulation, confirm | **Cancel** (safe default, focused) |
 | `mockup-c2-stolen-key-result.png` | Security → stolen-key result | Attempt the next misuse |
-| `mockups-contact-sheet.png` | All four on one sheet | — |
+| `mockups-contact-sheet.png` | All four on one sheet | - |
 
 Source: `src-v2/` (`base.css` design system, `lib.py` shell components, `a_dashboard.py`, `b_tamper.py`, `c_key.py`). To rebuild: `python3 a_dashboard.py`, `python3 b_tamper.py`, `python3 c_key.py confirm|result`, then
 `google-chrome --headless=new --no-sandbox --hide-scrollbars --force-device-scale-factor=2 --window-size=1600,1000 --virtual-time-budget=1500 --screenshot=<png> file://<html>`.
@@ -24,12 +24,12 @@ No AI image generation was used. Every pixel of text is real HTML text.
 
 | Token | Hex | Role | Contrast |
 |---|---|---|---|
-| ink | `#0B1220` | Icon rail background | — |
-| panel / panel-2 / panel-line | `#121B2C` / `#18233A` / `#24314A` | Category tree, selected row, dividers | — |
+| ink | `#0B1220` | Icon rail background | - |
+| panel / panel-2 / panel-line | `#121B2C` / `#18233A` / `#24314A` | Category tree, selected row, dividers | - |
 | side-text | `#C9D2E0` | Tree labels | 12.28 on ink · 11.06 on panel |
 | side-muted | `#8E9AAE` | Tree group labels and counts | 6.58 on ink · 5.93 on panel |
-| bg / surface / sunk | `#F4F5F7` / `#FFFFFF` / `#F8F9FB` | Canvas, cards, table headers | — |
-| line / line-2 | `#E4E7EC` / `#D0D5DD` | Hairlines (decorative) | — |
+| bg / surface / sunk | `#F4F5F7` / `#FFFFFF` / `#F8F9FB` | Canvas, cards, table headers | - |
+| line / line-2 | `#E4E7EC` / `#D0D5DD` | Hairlines (decorative) | - |
 | line-strong | `#7A8597` | Input and control borders | 3.73 on white (≥3:1 non-text) |
 | text | `#0F172A` | Primary text | 17.85 on white |
 | text-2 | `#475467` | Secondary text | 7.69 on white · 7.05 on bg |

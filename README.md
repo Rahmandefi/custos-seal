@@ -65,7 +65,7 @@ is rejected by NEAR before transfer, cross-contract, disallowed method, or
 deposit calls execute. The app does not move funds; the demo is about limiting
 a triage key, not about stopping a chain robbery.
 
-## Sustainability (proposal — not built)
+## Sustainability (proposal: not built)
 
 Candidate model for later: a per-case or per-receipt fee paid in NEAR, plus
 paid auditor seats that can verify without holding write keys. **No token and
@@ -77,11 +77,11 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 ## What this repo does
 
-1. **Enclave-sealed analysis** — Confidential TEE only (`z-ai/glm-5.3-flash`). Fresh nonce every request. Ed25519 + E2EE. TCB `UpToDate` only.
-2. **Deterministic policy** — citations must match evidence byte-for-byte (R1). Schema, provenance, irreversible-action HOLD, injection markers, confidence floor.
-3. **On-chain receipts** — full signed receipt stored at creation; contract rebuilds signed text and runs `env::ed25519_verify` (R3).
-4. **Human in the loop** — isolate/block/delete/notify wait for an investigator-signed `approve_action`.
-5. **Writer key** — backend holds a NEAR **function-call** key scoped to the receipt contract (`record_finding`, `record_custody_check` only). This is **not** the NEAR AI Cloud API key (R2).
+1. **Enclave-sealed analysis:** Confidential TEE only (`z-ai/glm-5.3-flash`). Fresh nonce every request. Ed25519 + E2EE. TCB `UpToDate` only.
+2. **Deterministic policy:** citations must match evidence byte-for-byte (R1). Schema, provenance, irreversible-action HOLD, injection markers, confidence floor.
+3. **On-chain receipts:** full signed receipt stored at creation; contract rebuilds signed text and runs `env::ed25519_verify` (R3).
+4. **Human in the loop:** isolate/block/delete/notify wait for an investigator-signed `approve_action`.
+5. **Writer key:** backend holds a NEAR **function-call** key scoped to the receipt contract (`record_finding`, `record_custody_check` only). This is **not** the NEAR AI Cloud API key (R2).
 
 Honest limits (NEAR docs): a `provider_tee` signature does not prove *which* GPU instance served the request; gateway + model evidence are not a complete cryptographic chain per response. We use non-streaming Chat Completions with a canonical model ID and `x-no-aliasing`. TDX quotes are verified off-chain; only hashes go on-chain.
 
@@ -191,7 +191,7 @@ See: exact match ACCEPT; whitespace / wrong line / missing / fabricated quote BL
 cd contracts/custody && cargo test --lib
 ```
 
-See: 6 tests pass — valid Ed25519 stores a Finding; flipped signature panics; replay panics; `request_open` from a stranger writes OpenDenied and returns false (no panic); grant/open/custody checks.
+See: 6 tests pass: valid Ed25519 stores a Finding; flipped signature panics; replay panics; `request_open` from a stranger writes OpenDenied and returns false (no panic); grant/open/custody checks.
 
 ### 6. End-to-end POST (testnet)
 
@@ -272,10 +272,10 @@ Testnet (2026-11-05):
 
 - Deploy: https://explorer.testnet.near.org/transactions/6NcH52t5kLj2N1b8fRLohfLALV1htf7FhYEdLnPhtp89
 - `add_signer`: https://explorer.testnet.near.org/transactions/EqPWta3mUqgU7AXi7jdjMR3ay4VW7Vzjy4DoqRfAZZHr
-- Receipt **0** — superseded filler test (`kind=Finding`): https://explorer.testnet.near.org/transactions/BNR827Htm3yL1HdaF7AsotxVyPde2Vp74fePvaUX1Rjg
-- Receipt **1** — first real Finding (live TEE, salted evidence commitment, `Accept`): https://explorer.testnet.near.org/transactions/D9xgsYHF9KC2nEHx19mNsJVjJNjG395bT7p5GmbotLgZ
+- Receipt **0:** superseded filler test (`kind=Finding`): https://explorer.testnet.near.org/transactions/BNR827Htm3yL1HdaF7AsotxVyPde2Vp74fePvaUX1Rjg
+- Receipt **1:** first real Finding (live TEE, salted evidence commitment, `Accept`): https://explorer.testnet.near.org/transactions/D9xgsYHF9KC2nEHx19mNsJVjJNjG395bT7p5GmbotLgZ
 - Receipts 2–5: Open, OpenDenied, CustodyCheck Accept, CustodyCheck Block (left unchanged)
-- Receipt **6** — salted `finding_hash`/`citation_hashes` from `samples/larkmoor-listing.txt`: https://explorer.testnet.near.org/transactions/CNVdjDYftBUYGXUSL5WezHuGzSMLjfG3DjER4VEaPQAj (storage +609 bytes)
+- Receipt **6:** salted `finding_hash`/`citation_hashes` from `samples/larkmoor-listing.txt`: https://explorer.testnet.near.org/transactions/CNVdjDYftBUYGXUSL5WezHuGzSMLjfG3DjER4VEaPQAj (storage +609 bytes)
 - Writer function-call key `ed25519:2f4coffNJB6iV9t7DdnByZNEETr1UXvvYhLfAGe5bevv` (receiver `ftcust15e434.testnet`, methods `record_finding` + `record_custody_check`)
 - The writer's **full-access** key is kept **offline** (`~/.near-credentials/offline/`), not deleted. A NEAR account with only a function-call key and no remaining full-access key cannot add keys, delete keys, or recover; deleting the last full-access key locks the account. The offline key is the recovery path if the 0.25 NEAR allowance needs a top-up or the method list needs a change.
 - [ ] UI (wallet, Verified panel, citation highlight)

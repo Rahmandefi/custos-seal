@@ -58,7 +58,7 @@ NEAR testnet: receipt contract (Rust)
 | **L1 Enclave-sealed analysis** | The prompt is encrypted to a model key bound to a verified Intel TDX quote (plus NVIDIA GPU evidence), and the reply is signed by that attested key. | It doesn't say the model's answer is correct. NEAR's own docs note that attestation "does not validate the quality of a model response". |
 | **L2 Deterministic policy** | Rule-based checks that run outside the model, so the model can't talk its way past them. Every finding must cite evidence whose quoted span matches the source byte-for-byte (R1). | It can't catch errors the rules don't encode. A correct quote with a wrong interpretation still passes. |
 | **L3 Signed receipts on NEAR** | An append-only, timestamped (`env::block_timestamp()`) record of findings, opens and approvals. Each finding's full signed receipt is stored at creation, and its Ed25519 signature is checked on-chain at write time (R3). | It doesn't verify the TDX quote on-chain. That happens off-chain, and only a hash reference is anchored. |
-| **L4 Human-in-the-loop** | Irreversible actions (isolate host, notify, delete, block, share externally) wait for an investigator sign-off transaction. | — |
+| **L4 Human-in-the-loop** | Irreversible actions (isolate host, notify, delete, block, share externally) wait for an investigator sign-off transaction. | - |
 
 **Data-handling rule (from the track prompt):** the Privacy track's starter prompt asks for "Keep nothing server-side after a response returns." Our backend keeps only **ciphertext** evidence (Layer A), hashes, and the retained attestation/signature evidence needed for audit. Plaintext exists only in memory while a request is in flight, and we call `clearResponseCache()` after verification. The README must say this and point to the code that does it.
 
@@ -140,8 +140,8 @@ Not eligible for our design: `chutes` and `tinfoil` models (3P), and every `exte
 | --- | --- | --- | --- |
 | `@nearai/inference-sdk` (npm) | **0.2.1** (published Oct 29, 2026; `next` = 0.2.1-rc.1) | Node **≥ 24.22.1** | `new InferenceClient({...})` from `@nearai/inference-sdk/node`; `client.verify(model)`; `client.chat.completions.create()`; `client.verifyResponse(id)` → `{ id, signatureKind }`; `client.clearResponseCache()` |
 | `nearai-inference-sdk` (PyPI) | **0.2.1** | Python **≥ 3.12**, async | `async with InferenceClient(api_key, e2ee=True) as client`; `await client.verify(model)`; `await client.verify_response(completion.id)` → `.signature_kind` |
-| `nearai-inference-sdk` (crates.io) / `github.com/nearai/inference-sdk/go` | 0.2.1 / — | Rust stable / Go ≥ 1.26.10 | Not used |
-| `dcap-qvl` (PyPI, crates.io) / `@phala/dcap-qvl` (npm, pure JS) | 0.7.1 | — | `get_collateral_and_verify(quote)` / `getCollateralAndVerify(quote)`. Collateral comes from Phala PCCS (`https://pccs.phala.network`) by default, or from Intel PCS via `INTEL_PCS_URL`. The JS SDK pins `@phala/dcap-qvl` 0.7.0. |
+| `nearai-inference-sdk` (crates.io) / `github.com/nearai/inference-sdk/go` | 0.2.1 / - | Rust stable / Go ≥ 1.26.10 | Not used |
+| `dcap-qvl` (PyPI, crates.io) / `@phala/dcap-qvl` (npm, pure JS) | 0.7.1 | - | `get_collateral_and_verify(quote)` / `getCollateralAndVerify(quote)`. Collateral comes from Phala PCCS (`https://pccs.phala.network`) by default, or from Intel PCS via `INTEL_PCS_URL`. The JS SDK pins `@phala/dcap-qvl` 0.7.0. |
 
 **SDK behavior that changes our design:**
 - **`signingAlgo` defaults to `'ed25519'`.** `'ecdsa'` selects the legacy secp256k1/AES-GCM E2EE. OHTTP requires Ed25519. *Decision: use Ed25519 everywhere*, which also allows on-chain `env::ed25519_verify` (§5.4).
@@ -368,8 +368,8 @@ C:\MOVEitTransfer\wwwroot\human2.aspx  created 2023-06-01 02:39  (not in vendor 
 | R-001 | Finding | ACCEPT | `human2.aspx` present in wwwroot, not in baseline. Cites listing line 2, quote `wwwroot\human2.aspx  created 2023-06-01 02:39`, byte-for-byte match |
 | R-002 | Finding | FLAG | POST/GET to `human2.aspx` from 198.51.100.23, referred for review. Cites log lines 3–4 |
 | R-003 | Recommendation | HOLD | "Isolate xfer-01" is irreversible, so it waits for `approve_action` |
-| R-004 | Open | — | `legal-review.testnet` opens the log excerpt, reason "privilege review" |
-| R-005 | OpenDenied | — | `random-user.testnet` tries to open it, so the attempt is denied and flagged |
+| R-004 | Open | - | `legal-review.testnet` opens the log excerpt, reason "privilege review" |
+| R-005 | OpenDenied | - | `random-user.testnet` tries to open it, so the attempt is denied and flagged |
 | R-006 | CustodyCheck | BLOCK | An edited copy of the log was re-submitted, and its commitment doesn't match R-002 |
 
 Two demo beats produce **no receipt**, by design. Attempts to misuse the writer key (§6) are rejected by the protocol before execution. A **test fixture** with a fabricated quote (labeled as a fixture, not a live model output) shows the P2 citation check returning BLOCK.

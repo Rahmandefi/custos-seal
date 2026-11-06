@@ -7,8 +7,8 @@ const ACCENT = rgb(0.122, 0.31, 0.82);
 const LINE = rgb(0.894, 0.906, 0.925);
 
 function s(v) {
-  if (v == null || v === "") return "—";
-  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (v == null || v === "") return "-";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "-";
   return String(v);
 }
 

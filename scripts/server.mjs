@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * POST /analyze — upload → TEE → provider_tee → dcap-qvl → policy → record_finding
+ * POST /analyze: upload → TEE → provider_tee → dcap-qvl → policy → record_finding
  * POST /custody/open  { case_id, evidence_id, reason }
  * POST /custody/check { case_id, evidence_commitment, expected_receipt_id, matched }
  * POST /custody/hold  same as /analyze but records verdict Hold

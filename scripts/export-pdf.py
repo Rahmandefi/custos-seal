@@ -31,7 +31,7 @@ def section(title, styles):
 
 
 def kv_table(rows, styles, col0=1.6 * inch, col1=5.4 * inch):
-    data = [[p(f"<b>{a}</b>", styles["tiny"]), p(b if b not in (None, "") else "—", styles["mono"])] for a, b in rows]
+    data = [[p(f"<b>{a}</b>", styles["tiny"]), p(b if b not in (None, "") else "-", styles["mono"])] for a, b in rows]
     t = Table(data, colWidths=[col0, col1])
     t.setStyle(
         TableStyle(
@@ -95,8 +95,8 @@ def main():
             [
                 p(r.get("id"), styles["mono"]),
                 p(r.get("kind"), styles["tiny"]),
-                p(r.get("verdict") or "—", styles["tiny"]),
-                p(r.get("prev_hash") or "—", styles["mono"]),
+                p(r.get("verdict") or "-", styles["tiny"]),
+                p(r.get("prev_hash") or "-", styles["mono"]),
             ]
         )
     tbl = Table(trows, colWidths=[0.5 * inch, 1.2 * inch, 1.0 * inch, 4.3 * inch], repeatRows=1)
@@ -122,10 +122,10 @@ def main():
                     ("Receipt id", f.get("receipt_id")),
                     ("Verdict", f.get("verdict")),
                     ("Finding hash", f.get("finding_hash")),
-                    ("Citations", ", ".join(f.get("citation_hashes") or []) or "—"),
-                    ("Evidence", ", ".join(f.get("evidence_commitments") or []) or "—"),
+                    ("Citations", ", ".join(f.get("citation_hashes") or []) or "-"),
+                    ("Evidence", ", ".join(f.get("evidence_commitments") or []) or "-"),
                     ("Claim", f.get("local_claim") or "on-chain hashes only"),
-                    ("Actions", ", ".join(f.get("local_actions") or []) or "—"),
+                    ("Actions", ", ".join(f.get("local_actions") or []) or "-"),
                     ("Label", "FICTIONAL"),
                 ],
                 styles,
@@ -146,7 +146,7 @@ def main():
                     ("Reason", r.get("reason")),
                     ("Finding hash", (r.get("finding") or {}).get("finding_hash")),
                     ("Tx", r.get("tx") or "not stored on-chain"),
-                    ("Explorer", r.get("explorer") or "—"),
+                    ("Explorer", r.get("explorer") or "-"),
                     ("Prev hash", r.get("prev_hash")),
                 ],
                 styles,

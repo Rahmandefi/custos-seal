@@ -191,8 +191,8 @@ function writeHeaders(extra = {}) {
 }
 
 function kindLabel(k) {
-  if (k == null || k === "") return "—";
-  if (typeof k === "object") return Object.keys(k)[0] || "—";
+  if (k == null || k === "") return "-";
+  if (typeof k === "object") return Object.keys(k)[0] || "-";
   return String(k);
 }
 
@@ -237,7 +237,7 @@ function shortHash(h) {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("")
     : String(h || "");
-  if (s.length < 16) return s || "—";
+  if (s.length < 16) return s || "-";
   return `${s.slice(0, 8)}…${s.slice(-8)}`;
 }
 
@@ -251,7 +251,7 @@ function esc(s) {
 
 function copyVal(full) {
   const s = String(full || "");
-  if (!s) return "—";
+  if (!s) return "-";
   const vis = s.length > 20 ? `${s.slice(0, 8)}…${s.slice(-8)}` : s;
   return `<span class="copyval" title="${esc(s)}"><span class="mono">${esc(vis)}</span>
     <button type="button" class="copy" data-copy="${encodeURIComponent(s)}">${svg("copy", 13)}Copy</button></span>`;
@@ -299,7 +299,7 @@ function sampleLabel(name) {
 }
 
 function tree(active) {
-  const n = state.statusLoading ? "…" : state.status?.receipt_count ?? "—";
+  const n = state.statusLoading ? "…" : state.status?.receipt_count ?? "-";
   const q = (state.filterQ || "").toLowerCase();
   const items = [
     ["cases", "folder", "All cases", "#/cases", "1", ""],
@@ -485,7 +485,7 @@ function walkDock() {
 function statusBar(extra) {
   const n = state.statusLoading ? "Loading…" : `${state.status?.receipt_count ?? 0} receipts`;
   return `<footer class="status">
-    <span>Custody log — <b>${n}</b></span>
+    <span>Custody log: <b>${n}</b></span>
     <span class="sep"></span>
     <span>NEAR testnet · <span class="mono">${state.status?.contract || "ftcust15e434.testnet"}</span></span>
     ${extra ? `<span class="sep"></span>${extra}` : ""}
@@ -577,7 +577,7 @@ function viewWorkspace() {
   const w = state.walk;
   const files = w.evidenceName
     ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded</td></tr>`
-    : `<tr><td colspan="2" class="empty">No local evidence file yet. Findings and receipts are already on chain for the sample case — Load the sample file below, or open <a href="#/finding">Findings</a> / <a href="#/receipt">Custody log</a>.</td></tr>`;
+    : `<tr><td colspan="2" class="empty">No local evidence file yet. Findings and receipts are already on chain for the sample case. Load the sample file below, or open <a href="#/finding">Findings</a> / <a href="#/receipt">Custody log</a>.</td></tr>`;
   return shell(
     "workspace",
     crumb("Evidence"),
@@ -705,10 +705,10 @@ function viewReceipt() {
       `<p class="lede">${loaded ? `Receipt ${id} was not found on chain.` : "Loading receipt…"}</p>`);
   }
   const f = rec.finding || {};
-  const wait = loaded ? "—" : "Loading…";
+  const wait = loaded ? "-" : "Loading…";
   const hx = (b) => (b ? copyVal(hexOf(b)) : wait);
   const list2 = (arr) => (arr && arr.length ? arr.map((b) => `<div>${copyVal(hexOf(b))}</div>`).join("") : wait);
-  const ts = rec.timestamp_ns ? new Date(Number(rec.timestamp_ns) / 1e6).toISOString().replace(".000", "") : "—";
+  const ts = rec.timestamp_ns ? new Date(Number(rec.timestamp_ns) / 1e6).toISOString().replace(".000", "") : "-";
   const contract = state.status?.contract || "ftcust15e434.testnet";
   const findingRows = rec.finding || !loaded ? `
         <div><dt>Model</dt><dd class="mono">${esc(f.model_id || wait)}</dd></div>
@@ -732,7 +732,7 @@ function viewReceipt() {
       <dl class="kv">
         <div><dt>Kind</dt><dd>${esc(kindLabel(rec.kind))}</dd></div>
         <div><dt>Verdict</dt><dd>${esc(kindLabel(rec.policy_verdict))}</dd></div>
-        <div><dt>Reason</dt><dd class="mono">${esc(rec.reason ?? "—")}</dd></div>
+        <div><dt>Reason</dt><dd class="mono">${esc(rec.reason ?? "-")}</dd></div>
         <div><dt>Recorded (UTC)</dt><dd class="mono">${ts}</dd></div>
         <div><dt>Evidence commitments</dt><dd class="mono">${list2(rec.evidence_commitments)}</dd></div>
         ${findingRows}
@@ -848,7 +848,7 @@ function securityResult(atk) {
       <div class="rh">${rejected ? "Rejected by NEAR before it ran" : "Unexpected: transaction accepted"}</div></div></div>
     <p class="rline">${rejected
       ? "Rejected before execution, nothing was recorded, no funds moved."
-      : "A transaction hash was returned — inspect it on NearBlocks."}</p>
+      : "A transaction hash was returned. Inspect it on NearBlocks."}</p>
     ${atk.expect || atk.error ? `<div class="rerr"><span class="rl">${rejected ? "NEAR protocol error" : "Detail"}</span>
       <span class="code">${esc(atk.expect || atk.error)}</span></div>` : ""}
     <div class="facts">
@@ -977,7 +977,7 @@ function viewReports() {
   const x = state.exportData;
   const s = x?.summary || {};
   const v = x?.verification || {};
-  const n = (k) => (x ? s[k] ?? "—" : "…");
+  const n = (k) => (x ? s[k] ?? "-" : "…");
   const rows = (x?.timeline || [])
     .map((r) => `<tr><td class="mono ts">${r.id}</td><td>${esc(r.kind)}</td><td>${r.verdict ? verdictChip(r.verdict) : kindChip(r.kind)}</td>
       <td class="mono acc">${esc(r.actor)}</td><td><a class="lnk" href="#/receipt/${r.id}">Open ${svg("arrow", 13)}</a></td></tr>`)
@@ -999,7 +999,7 @@ function viewReports() {
       <div class="kpi block"><div class="kh">Decisions</div><div class="kv">${x ? (s.approval_count ?? 0) + (s.rejection_count ?? 0) : "…"}</div><div class="ks">${x ? `${s.approval_count ?? 0} approved · ${s.rejection_count ?? 0} rejected` : ""}</div></div>
     </div>
     <div class="card lim"><dl class="kv">
-      <div><dt>Contract</dt><dd class="mono">${esc(s.contract || "—")}</dd></div>
+      <div><dt>Contract</dt><dd class="mono">${esc(s.contract || "-")}</dd></div>
       <div><dt>Export generated (UTC)</dt><dd class="mono">${esc(x?.generated_at || "…")}</dd></div>
       <div><dt>R1 citations</dt><dd>${esc(v.r1 || "…")}</dd></div>
       <div><dt>R2 writer key</dt><dd>${esc(v.r2 || "…")}</dd></div>
@@ -1051,7 +1051,7 @@ function wizardPane() {
           ? `<div class="dsec" style="padding:12px 0"><div class="dl">Salted commitment</div>
              <p>${copyVal(s.commitment)}</p>
              <p class="lede">${esc(s.evidenceName)}</p></div>`
-          : `<p class="lede empty">No local evidence file yet — load the sample file; sample findings are already on chain.</p>`
+          : `<p class="lede empty">No local evidence file yet. Load the sample file; sample findings are already on chain.</p>`
       }`;
   }
   const acct = wlt.connected && wlt.accountId ? shortAccount(wlt.accountId) : "No wallet";
@@ -1059,7 +1059,7 @@ function wizardPane() {
     <p class="lede">Open the case workspace with evidence loaded. Analyze is highlighted next.</p>
     <dl class="kv">
       <div><dt>Account</dt><dd>${esc(acct)}</dd></div>
-      <div><dt>Source</dt><dd>${esc(s.evidenceName || "—")}${s.source === "sample" ? sampleLabel("larkmoor") : ""}</dd></div>
+      <div><dt>Source</dt><dd>${esc(s.evidenceName || "-")}${s.source === "sample" ? sampleLabel("larkmoor") : ""}</dd></div>
       <div><dt>Case</dt><dd>${esc(s.caseName || "Larkmoor Records Office")}</dd></div>
     </dl>`;
 }
@@ -1619,7 +1619,7 @@ function bind() {
       const ok = String(data.commitment || "").toLowerCase() === String(expected || "").toLowerCase();
       state.custodyMsg = {
         ok,
-        text: ok ? "Match — custody intact" : "CUSTODY BREAK — fingerprint does not match on-chain receipt",
+        text: ok ? "Match: custody intact" : "CUSTODY BREAK: fingerprint does not match on-chain receipt",
         commitment: data.commitment,
         expected,
         file_b64: b64,
