@@ -413,3 +413,71 @@
 mark.cite{padding:0 2px;border-radius:3px}
 mark.cite.ok{background:var(--p);color:var(--bh)}
 mark.cite.bad{background:var(--d);color:var(--w)}
+mark.cite.pending{background:var(--h);color:var(--bb)}
+.content{overflow-y:auto;padding-bottom:24px}
+.lede,.m,.cant,.empty,.tbl td.empty,p.mut,.sub,.rline,.wal p{
+  word-break:normal;
+  overflow-wrap:break-word;
+}
+.lim .kv dd{
+  word-break:normal;
+  overflow-wrap:break-word;
+}
+.lim .kv dd.mono,
+.tag,.code,pre,code,.hash{
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+.cite-chip{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  overflow:visible;
+  align-items:center;
+}
+.cite-chip .copy{flex:none;min-width:max-content}
+.brand{
+  flex:0 0 auto;
+  max-width:min(280px,42vw);
+}
+.gsearch{
+  flex:0 1 160px;
+  min-width:36px;
+  width:auto;
+}
+.top .crumb{flex:1 1 160px}
+.tbl table{min-width:0;width:100%}
+.tbl td.empty{white-space:normal;overflow-wrap:break-word;word-break:normal}
+.tbl td.cn{
+  max-width:280px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#ev-form .hash,#ev-form .copyval{word-break:normal;overflow-wrap:anywhere}
+@media (max-width:768px){
+  .rail{flex-wrap:wrap;overflow:visible;overflow-x:visible}
+  .ri{flex:0 0 auto;min-width:min-content;width:auto;white-space:nowrap;overflow:visible}
+  .ri span{overflow:visible;text-overflow:unset}
+  .tree{
+    display:flex;
+    flex-wrap:wrap;
+    overflow:visible;
+    gap:6px;
+    max-width:100%;
+  }
+  .tn,.tn.l2{white-space:nowrap;flex:0 0 auto;overflow:visible}
+  .tbl table{min-width:0}
+  .content{flex:1;overflow-y:auto;padding-bottom:20px}
+}
+@media (max-width:480px){
+  .wiz-steps-h{display:block;padding:14px 18px 0}
+  .wiz-steps-h li{display:none}
+  .wiz-steps-h::before{
+    content:attr(data-compact);
+    display:block;
+    font-size:13px;
+    font-weight:600;
+    color:var(--q);
+    padding-bottom:10px;
+  }
+}

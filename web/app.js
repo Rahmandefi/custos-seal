@@ -282,7 +282,7 @@ function caseName() {
   return state.setup.caseName || state.walk.caseName || "Larkmoor Records Office";
 }
 function crumb(page) {
-  const name = `<span class="crumb-case">${esc(caseName())}</span>`;
+  const name = `<span class="crumb-case" title="${esc(caseName())}">${esc(caseName())}</span>`;
   if (!page || page === "Cases") return name;
   return `${name}<span class="crumb-sep" aria-hidden="true">/</span><b>${page}</b>`;
 }
@@ -328,9 +328,11 @@ function tree(active) {
     <div class="sh">
       <div class="k">Case</div>
       <div class="t">${esc(caseName())}</div>
-      <div class="m">${state.setup.caseDesc || state.walk.caseDesc || "File-transfer breach"}${sampleLabel(
-        state.setup.evidenceName || state.walk.evidenceName || "larkmoor"
-      )}</div>
+      <div class="m">${state.setup.caseDesc || state.walk.caseDesc || "File-transfer breach"}${
+        state.setup.source === "sample" || state.walk.source === "sample"
+          ? sampleLabel(state.walk.evidenceName || "larkmoor")
+          : ""
+      }</div>
     </div>
     <label class="ssearch">${svg("search", 14)}<input id="side-filter" type="search" placeholder="Filter pages and log" value="${esc(
       state.filterQ
@@ -585,8 +587,8 @@ function viewCases() {
 function viewWorkspace() {
   const w = state.walk;
   const files = w.evidenceName
-    ? `<tr><td class="cn">${svg("file", 15)}${w.evidenceName}</td><td class="mut">Uploaded</td></tr>`
-    : `<tr><td colspan="2" class="empty">No local evidence file yet. Findings and receipts are already on chain for the sample case. Load the sample file below, or open <a href="#/finding">Findings</a> / <a href="#/receipt">Custody log</a>.</td></tr>`;
+    ? `<tr><td class="cn" title="${esc(w.evidenceName)}">${svg("file", 15)}${esc(w.evidenceName)}</td><td class="mut">Uploaded</td></tr>`
+    : `<tr><td colspan="2" class="empty">No local evidence file yet. Findings and receipts are already on chain for the sample case. Load the sample file below, or open Findings / Custody log.</td></tr>`;
   return shell(
     "workspace",
     crumb("Evidence"),
@@ -610,7 +612,7 @@ function viewWorkspace() {
             <button class="ev-tile" type="button" id="load-sample">
               ${svg("folder", 22)}
               <strong>Load the sample file</strong>
-              <span>Sample case: training data</span>
+              <span>Use the example evidence</span>
             </button>
           </div>
           ${
@@ -781,12 +783,24 @@ function viewFinding() {
   const rec = last ? state.receipts[last.id] || last : null;
   const local = last ? state.localFindings[last.id] : null;
   const citeEmpty = last && !(last.id in state.receipts) ? "<p class='mut'>Loading…</p>" : "<p class='mut'>None</p>";
-  const quotes = (local?.citations || []).map((c) => {
+  const evidenceText = state.walk.evidenceText || "";
+  const evidenceLoaded = Boolean(evidenceText);
+  const quoteChecks = (local?.citations || []).map((c) => {
     const q = c.quote || "";
-    const inSample = (state.sampleText || "").includes(q);
-    return `<p><mark class="cite ${inSample ? "ok" : "bad"}">${esc(q)}</mark></p>`;
-  }).join("");
-  const citePass = local?.citations?.length && (local.citations || []).every((c) => (state.sampleText || "").includes(c.quote || ""));
+    if (!evidenceLoaded) return { q, state: "pending", reason: "Evidence not loaded in this session" };
+    if (evidenceText.includes(q)) return { q, state: "ok", reason: "Citation check passed, byte-for-byte match" };
+    return { q, state: "bad", reason: "Quote is not in the loaded evidence bytes" };
+  });
+  const quotes = quoteChecks
+    .map((c) => `<p><mark class="cite ${c.state}" title="${esc(c.reason)}">${esc(c.q)}</mark></p>`)
+    .join("");
+  const citePass = quoteChecks.length > 0 && quoteChecks.every((c) => c.state === "ok");
+  const citePending = !evidenceLoaded;
+  const citeNote = citePending
+    ? `<p class="mut">Not checked. Load the sample file on Evidence, then return here.</p>`
+    : citePass
+      ? `<p class="recd">Citation check passed</p>`
+      : `<p class="mut">Citation mismatch: a quoted span is not in the loaded file (${esc(state.walk.evidenceName || "evidence")}).</p>`;
   return shell(
     "finding",
     crumb("Findings"),
@@ -806,7 +820,7 @@ function viewFinding() {
         </div>
         <aside class="card det">
           <div class="dh"><div class="eyebrow">Evidence viewer</div><h2>Byte-for-byte citations</h2>
-            ${citePass ? `<p class="recd">Citation check passed</p>` : `<p class="mut">Load the sample file to check quotes.</p>`}</div>
+            ${citeNote}</div>
           <div class="dsec">${quotes || `<p class="lede">Open the original file in Verify from chain. A matching quote is marked: Citation check passed, byte-for-byte match.</p>`}</div>
         </aside>
       </div>`
@@ -1054,7 +1068,7 @@ function wizardPane() {
         <button type="button" class="src-card${s.source === "sample" ? " on" : ""}" id="wiz-sample">
           ${svg("folder", 22)}
           <strong>Load the sample case</strong>
-          <span>Sample case: training data</span>
+          <span>Use the example evidence</span>
         </button>
       </div>
       ${
@@ -1142,7 +1156,7 @@ function viewSetup() {
         : ""
     }
     <div class="wiz-card card${isConnect ? " wiz-card--connect" : ""}">
-      <ol class="wiz-steps-h" aria-label="Setup">${steps}</ol>
+      <ol class="wiz-steps-h" data-compact="Step ${idx + 1} of ${SETUP_STEPS.length}" aria-label="Setup">${steps}</ol>
       <div class="wiz-body">
         ${wizardPane()}
         <div class="wiz-nav${isConnect ? " wiz-nav--solo" : ""}">
@@ -1308,7 +1322,7 @@ function bindSetup() {
       e.preventDefault();
       state.setup.source = "sample";
       persistSetup();
-      const sample = await (await fetch("/api/sample")).json();
+      const sample = await (await fetch("/api/sample?kind=hold")).json();
       state.sampleText = sample.text || "";
       if (sample.salt) state.sampleSalt = sample.salt;
       const blob = new Blob([sample.text], { type: "text/plain" });
@@ -1461,6 +1475,13 @@ async function commitFile(file, source) {
   state.walk.evidenceName = file.name;
   state.walk.salt = data.salt;
   state.walk.commitment = data.commitment;
+  try {
+    const text = await file.text();
+    if (text.length <= 200000) state.walk.evidenceText = text;
+  } catch {
+    state.walk.evidenceText = "";
+  }
+  state.walk.source = source || state.walk.source || "upload";
   persistWalk();
   state.setup.source = source || state.setup.source || "upload";
   state.setup.evidenceName = file.name;
@@ -1533,7 +1554,7 @@ function bind() {
   const ls = document.getElementById("load-sample");
   if (ls) {
     ls.onclick = async () => {
-      const s = await (await fetch("/api/sample")).json();
+      const s = await (await fetch("/api/sample?kind=hold")).json();
       state.sampleText = s.text || "";
       if (s.salt) state.sampleSalt = s.salt;
       const blob = new Blob([s.text], { type: "text/plain" });

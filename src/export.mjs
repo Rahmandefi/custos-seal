@@ -1,6 +1,9 @@
 import { writeFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CONTRACT, OWNER, WRITER, getReceipt, receiptCount } from "./near.mjs";
+
+const SAMPLES = join(dirname(fileURLToPath(import.meta.url)), "..", "samples");
 
 const LIMITS =
   "Triage tool, not court-certified. Attestation notes: citations are byte-for-byte (R1); receipts are written with a function-call writer key (R2); the signed finding is stored and ed25519-verified on-chain at write time (R3). TCB policy accepts UpToDate only. Sample items are FICTIONAL.";
@@ -56,11 +59,19 @@ export function normalizeReceipt(r, txIndex = {}) {
 }
 
 export async function loadTxIndex(outDir) {
+  let shipped = {};
+  let live = {};
   try {
-    return JSON.parse(await readFile(join(outDir, "tx-index.json"), "utf8"));
+    shipped = JSON.parse(await readFile(join(SAMPLES, "tx-index.json"), "utf8"));
   } catch {
-    return {};
+    /* none */
   }
+  try {
+    live = JSON.parse(await readFile(join(outDir, "tx-index.json"), "utf8"));
+  } catch {
+    /* none */
+  }
+  return { ...shipped, ...live };
 }
 
 export async function rememberTx(outDir, receiptId, tx) {
@@ -69,6 +80,13 @@ export async function rememberTx(outDir, receiptId, tx) {
   idx[String(receiptId)] = tx;
   idx[receiptId] = tx;
   await writeFile(join(outDir, "tx-index.json"), JSON.stringify(idx, null, 2));
+  if (!process.env.VERCEL) {
+    try {
+      await writeFile(join(SAMPLES, "tx-index.json"), JSON.stringify(idx, null, 2));
+    } catch {
+      /* read-only */
+    }
+  }
 }
 
 export async function buildExport(outDir) {

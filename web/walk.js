@@ -36,6 +36,7 @@ export function defaultWalk() {
     caseDesc: "",
     caseId: "larkmoor-demo",
     evidenceName: "",
+    evidenceText: "",
     salt: "",
     commitment: "",
     receiptId: null,
