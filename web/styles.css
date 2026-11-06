@@ -356,6 +356,9 @@
 }
 #ev-form .dl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .lcol,.split{min-width:0}
+.hd-ev{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+#ws-analyze{margin-top:16px;text-decoration:none}
+#ws-analyze.ring{box-shadow:0 0 0 3px rgba(31,79,209,.25)}
 .brand{
   flex:0 1 auto;
   max-width:min(260px,34vw);

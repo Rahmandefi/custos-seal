@@ -584,7 +584,7 @@ function viewWorkspace() {
     "workspace",
     crumb("Evidence"),
     null,
-    `<div class="hd"><div><h1>Evidence</h1><p class="lede">Upload a file, then run analysis. Citations must match byte-for-byte.</p></div>
+    `<div class="hd hd-ev"><div><h1>Evidence</h1><p class="lede">Upload a file, then run analysis. Citations must match byte-for-byte.</p></div>
       <a class="btn primary${state.setup.highlightAnalyze ? " ring" : ""}" href="#/analyze" id="ws-analyze">${svg("list", 17)}Analyze</a></div>
     <div class="split">
       <div class="lcol">
