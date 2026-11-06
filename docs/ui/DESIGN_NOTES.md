@@ -44,8 +44,8 @@ All text pairs meet AA (4.5:1). Verdicts are never colour alone. Each is **icon 
 
 ## Typography, spacing, grid
 - **IBM Plex Sans** for UI and **IBM Plex Mono** for hashes, offsets, timestamps, account IDs and method names. Both are open-licensed (SIL OFL). Plex has an engineered, documentary tone, and its mono has distinct 0/O and 1/l, which matters when people read hashes aloud to each other. Mono also gives tabular alignment for timestamps.
-- Scale: 11.5 (meta) · 12.5–13.5 (dense tables) · 14 (body) · 20–26 (screen titles). Weight 600 for headings and only one 26px line per screen.
-- 4px base grid. Card padding 16–20, gaps 8/12/16. Rows: tree 32px, dense table ~36px (Autopsy-like density), buttons 44px (touch- and glove-friendly target).
+- Scale: 11.5 (meta) · 12.5-13.5 (dense tables) · 14 (body) · 20-26 (screen titles). Weight 600 for headings and only one 26px line per screen.
+- 4px base grid. Card padding 16-20, gaps 8/12/16. Rows: tree 32px, dense table ~36px (Autopsy-like density), buttons 44px (touch- and glove-friendly target).
 - Shell grid: 72px icon rail · 272px category tree · fluid work area. A 56px top bar (breadcrumb, search, state chips, account) and a 30px status bar (file size, sync time, network, FICTIONAL tag) frame every screen.
 
 ## Top UX decisions

@@ -1,9 +1,9 @@
 # Private Forensic Triage Assistant: Build Framework
 
 **NEAR Hackathon entry · Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`)**
-Prepared Wed Nov 4, 2026 (Lagos, UTC+1). Submissions close **Nov 14, 2026, 23:59 UTC** (Nov 15, 00:59 Lagos). Judging Nov 16–18, 2026.
+Prepared Wed Nov 4, 2026 (Lagos, UTC+1). Submissions close **Nov 14, 2026, 23:59 UTC** (Nov 15, 00:59 Lagos). Judging Nov 16-18, 2026.
 
-> **How to read this document.** Every technical claim was checked this session against NEAR documentation, GitHub source, npm/PyPI/crates.io package pages or live endpoints, opened on Nov 4, 2026. Each section ends with its sources. **[UNVERIFIED]** marks something we could not confirm. **[TBD]** marks a decision the team still has to make. "Live check" means we ran it ourselves against the production endpoint on Nov 4, 2026 between 22:40 and 23:20 Lagos time. **Required design fixes R1–R3** (citations on every finding, a writer key scoped to one contract, receipts stored on-chain at creation) were added at 23:20 Lagos and are summarized in §3.1.
+> **How to read this document.** Every technical claim was checked this session against NEAR documentation, GitHub source, npm/PyPI/crates.io package pages or live endpoints, opened on Nov 4, 2026. Each section ends with its sources. **[UNVERIFIED]** marks something we could not confirm. **[TBD]** marks a decision the team still has to make. "Live check" means we ran it ourselves against the production endpoint on Nov 4, 2026 between 22:40 and 23:20 Lagos time. **Required design fixes R1-R3** (citations on every finding, a writer key scoped to one contract, receipts stored on-chain at creation) were added at 23:20 Lagos and are summarized in §3.1.
 
 ---
 
@@ -62,7 +62,7 @@ NEAR testnet: receipt contract (Rust)
 
 **Data-handling rule (from the track prompt):** the Privacy track's starter prompt asks for "Keep nothing server-side after a response returns." Our backend keeps only **ciphertext** evidence (Layer A), hashes, and the retained attestation/signature evidence needed for audit. Plaintext exists only in memory while a request is in flight, and we call `clearResponseCache()` after verification. The README must say this and point to the code that does it.
 
-### 3.1 Required design fixes for the core product (R1–R3)
+### 3.1 Required design fixes for the core product (R1-R3)
 
 These three are **required**, not optional polish. Each one also appears in the contract (§5.5), access control (§6), policy engine (§7), demo (§9), plan (§10), risks (§11) and checklist (§12).
 
@@ -243,7 +243,7 @@ The contract rebuilds the signed text from the stored fields, so the stored fiel
 | Signature data | ECDSA quote signature plus the QE certification data chain, checked against Intel's root by the verifier |
 | TCB statuses (dcap-qvl) | `UpToDate`, `SWHardeningNeeded`, `ConfigurationNeeded`, `ConfigurationAndSWHardeningNeeded`, `OutOfDate`, `OutOfDateConfigurationNeeded`, `Revoked`, `TDRelaunchAdvised`, `TDRelaunchAdvisedConfigurationNeeded`. The result also carries Intel `advisory_ids`. |
 | Collateral | Certificates, CRLs and TCB info from a PCCS (Phala's by default) or Intel PCS, checked against the current time. Fully offline verification is possible with collateral you already hold. |
-| What dstack adds | `info.tcb_info` exposes `mrtd`, `rtmr0–3`, `os_image_hash`, `compose_hash`, `app_compose` and `event_log`. RTMR3 is extended with app events such as `app-id` and `compose-hash`, which the replay authenticates. |
+| What dstack adds | `info.tcb_info` exposes `mrtd`, `rtmr0-3`, `os_image_hash`, `compose_hash`, `app_compose` and `event_log`. RTMR3 is extended with app events such as `app-id` and `compose-hash`, which the replay authenticates. |
 
 **Our TCB policy:** accept `UpToDate` only, and record `advisory_ids` in the receipt. If NEAR's fleet reports anything else during the demo window, show it as **Unverified (policy)** rather than silently accepting it **[TBD: fallback to also allow `SWHardeningNeeded`?]**.
 
@@ -344,7 +344,7 @@ The policy engine runs after signature verification and before a receipt is writ
 > **FICTIONAL SCENARIO: FOR DEMONSTRATION ONLY.** The organization, people, hosts, files, IP addresses, timestamps and findings below are invented. The tool has not been used on any real case.
 
 **Public background (real, 2023):**
-- In May–June 2023, the **Cl0p** ransomware group (also tracked as TA505) exploited **CVE-2023-34362**, a **SQL injection** zero-day in **Progress Software's MOVEit Transfer** managed file-transfer product.
+- In May-June 2023, the **Cl0p** ransomware group (also tracked as TA505) exploited **CVE-2023-34362**, a **SQL injection** zero-day in **Progress Software's MOVEit Transfer** managed file-transfer product.
 - Compromised servers received a web shell (LEMURLOOT) that was first seen with the name **`human2.aspx`**, chosen to look like the legitimate `human.aspx`.
 - CISA added the CVE to its Known Exploited Vulnerabilities catalog on June 2, 2023, and CISA/FBI published advisory AA23-158A on June 7, 2023.
 
@@ -366,7 +366,7 @@ C:\MOVEitTransfer\wwwroot\human2.aspx  created 2023-06-01 02:39  (not in vendor 
 | Receipt | Kind | Policy | Content |
 | --- | --- | --- | --- |
 | R-001 | Finding | ACCEPT | `human2.aspx` present in wwwroot, not in baseline. Cites listing line 2, quote `wwwroot\human2.aspx  created 2023-06-01 02:39`, byte-for-byte match |
-| R-002 | Finding | FLAG | POST/GET to `human2.aspx` from 198.51.100.23, referred for review. Cites log lines 3–4 |
+| R-002 | Finding | FLAG | POST/GET to `human2.aspx` from 198.51.100.23, referred for review. Cites log lines 3-4 |
 | R-003 | Recommendation | HOLD | "Isolate xfer-01" is irreversible, so it waits for `approve_action` |
 | R-004 | Open | - | `legal-review.testnet` opens the log excerpt, reason "privilege review" |
 | R-005 | OpenDenied | - | `random-user.testnet` tries to open it, so the attempt is denied and flagged |
@@ -380,14 +380,14 @@ Two demo beats produce **no receipt**, by design. Attempts to misuse the writer 
 
 | Time | Action | What the judge sees |
 | --- | --- | --- |
-| 0:00–0:12 | State the problem in one line, then upload `samples/larkmoor-log.txt` (FICTIONAL) | File hashed in the browser. The commitment is shown and the stored file is labeled "encrypted at rest". |
-| 0:12–0:35 | Click **Analyze** | A live **Verified panel** lists each check: nonce generated → gateway quote UpToDate → model quote UpToDate → REPORTDATA binds nonce + signer → RTMR3 replay ✓ → MRCONFIGID ✓ → NVIDIA NRAS ✓ → prompt encrypted to the attested key |
-| 0:35–0:52 | The finding appears **with citations (R1)** | Each finding shows its citations. Clicking one highlights the exact span in the evidence, with "citation check ✓ byte-for-byte". Then a labeled test fixture with a fabricated quote runs: **BLOCK, citation check failed**. |
-| 0:52–1:10 | The receipt **stored on-chain at creation (R3)** | NEAR testnet transaction link; the stored receipt fields (hashes, signature, signer, report hashes, nonce, citation hashes, timestamp); "`ed25519_verify` passed at write time". **Verify from chain** recomputes the hashes from the retained bytes with no NEAR AI Cloud call. **Verify independently** opens `cloud.near.ai/verify?model=…#receipt=…` and shows **Reply verified**. |
-| 1:10–1:22 | Access control | A grantee opens the file (Open receipt). A non-allowlisted account tries and gets an **OpenDenied** receipt, flagged in red. |
-| 1:22–1:32 | HOLD approval | The investigator signs "Isolate xfer-01 → reject" (Rejection receipt). |
-| 1:32–1:44 | **Tamper detection** | Re-upload an edited log copy, so the commitment ≠ the on-chain receipt: **CUSTODY BREAK**. Change one byte of a stored response, so its hash no longer matches the stored receipt and signature verification **fails**. |
-| 1:44–2:00 | **Climax: a stolen key tries to move money (R2)** | An attacker has the app's writer key (a function-call key scoped to the receipt contract, §6.1) and tries a NEAR transfer → `RequiresFullAccess`; then a call to another contract → `ReceiverMismatch`. The NEAR protocol rejects both before execution, so **no funds move**. The app shows the error; there's no explorer link because nothing executes. Close on "NEAR enables: attested private inference + tamper-evident custody on-chain". |
+| 0:00-0:12 | State the problem in one line, then upload `samples/larkmoor-log.txt` (FICTIONAL) | File hashed in the browser. The commitment is shown and the stored file is labeled "encrypted at rest". |
+| 0:12-0:35 | Click **Analyze** | A live **Verified panel** lists each check: nonce generated → gateway quote UpToDate → model quote UpToDate → REPORTDATA binds nonce + signer → RTMR3 replay ✓ → MRCONFIGID ✓ → NVIDIA NRAS ✓ → prompt encrypted to the attested key |
+| 0:35-0:52 | The finding appears **with citations (R1)** | Each finding shows its citations. Clicking one highlights the exact span in the evidence, with "citation check ✓ byte-for-byte". Then a labeled test fixture with a fabricated quote runs: **BLOCK, citation check failed**. |
+| 0:52-1:10 | The receipt **stored on-chain at creation (R3)** | NEAR testnet transaction link; the stored receipt fields (hashes, signature, signer, report hashes, nonce, citation hashes, timestamp); "`ed25519_verify` passed at write time". **Verify from chain** recomputes the hashes from the retained bytes with no NEAR AI Cloud call. **Verify independently** opens `cloud.near.ai/verify?model=…#receipt=…` and shows **Reply verified**. |
+| 1:10-1:22 | Access control | A grantee opens the file (Open receipt). A non-allowlisted account tries and gets an **OpenDenied** receipt, flagged in red. |
+| 1:22-1:32 | HOLD approval | The investigator signs "Isolate xfer-01 → reject" (Rejection receipt). |
+| 1:32-1:44 | **Tamper detection** | Re-upload an edited log copy, so the commitment ≠ the on-chain receipt: **CUSTODY BREAK**. Change one byte of a stored response, so its hash no longer matches the stored receipt and signature verification **fails**. |
+| 1:44-2:00 | **Climax: a stolen key tries to move money (R2)** | An attacker has the app's writer key (a function-call key scoped to the receipt contract, §6.1) and tries a NEAR transfer → `RequiresFullAccess`; then a call to another contract → `ReceiverMismatch`. The NEAR protocol rejects both before execution, so **no funds move**. The app shows the error; there's no explorer link because nothing executes. Close on "NEAR enables: attested private inference + tamper-evident custody on-chain". |
 
 **Fallback:** If NEAR AI Cloud evidence is unavailable during recording, the panel shows **Unable to verify** and no receipt is written. Record that path too, since it demonstrates fail-closed behavior.
 
@@ -403,7 +403,7 @@ Build order follows the risk: prove one verified call first, then the receipt co
 | 2 | Fri Nov 6 | Rust contract (`cargo near new`): the full `SignedFinding` receipt stored at creation (R3), signed text rebuilt on-chain + `ed25519_verify` in `record_finding`, replay set, citation-hash rule, approved signers, allowlist, NEP-297 events, non-panicking `request_open`. Unit tests. Testnet accounts via `--useFaucet`. Deploy. | `near view` returns a receipt written from Day 1's real signature with every R3 field. Tests reject a flipped signature byte and a replayed response hash. |
 | 3 | Sat Nov 7 | Backend → contract integration with a NEAR **function-call key** (receiver = receipt contract, methods = writer methods, finite allowance) (R2). `scripts/attack-key`: transfer, other-contract call, disallowed method, attached deposit; capture each error. `near-workspaces` sandbox tests: grant, open, deny, approve, bad signature. Measure gas and storage per receipt. | Tests are green. All four attack attempts are rejected with the expected errors. The README cost table is filled in with measured numbers. |
 | 4 | Sun Nov 8 | Front end: wallet connect (near-connect), upload, browser hashing, Layer A encryption, Verified panel, receipt viewer, citation highlighting (R1), "Verify from chain" (R3), Verification Center deep link | The full happy path works in the UI |
-| 5 | Mon Nov 9 | Policy engine P1–P6 with unit tests, including the P2 citation checker (R1) with fixtures: exact match, whitespace-changed quote, wrong line range, missing citation, IOC outside its span. HOLD queue and `approve_action` signing. | Each rule has a passing and a failing fixture |
+| 5 | Mon Nov 9 | Policy engine P1-P6 with unit tests, including the P2 citation checker (R1) with fixtures: exact match, whitespace-changed quote, wrong line range, missing citation, IOC outside its span. HOLD queue and `approve_action` signing. | Each rule has a passing and a failing fixture |
 | 6 | Tue Nov 10 | Access control end to end: grant/revoke UI, `request_open` from the grantee's wallet, NEP-413 session check, gated key release, denied attempts flagged | The demo accounts behave as in §8 R-004/R-005 |
 | 7 | Wed Nov 11 | FICTIONAL MOVEit samples. Tamper demos (file edit, response byte flip). Attack demo with the writer key (R2), run last as the demo climax. Fabricated-citation fixture (R1). Prompt-injection evidence sample. Fail-closed path (bad nonce, wrong model alias). | All §9 beats run from a clean start |
 | 8 | Thu Nov 12 | Reproducibility pass from a **fresh clone on a clean machine or container**. README "do X → see Y" steps. Audit every README claim against the code. Secrets scan of git history. | A second person (or a fresh agent) follows the README with no help |
@@ -455,7 +455,7 @@ Build order follows the risk: prove one verified call first, then the receipt co
 - [ ] Fictional sample documents in `samples/`, labeled FICTIONAL
 - [ ] Demo video (≤ 2 min) plus screenshots. For a local-only demo, the video is required ("screenshots are not enough"). A hosted demo is a plus: keep it up until at least Nov 18, ideally Nov 25.
 - [ ] Public X post **written and published by the human**: says it was built at NEAR HACKATHON, tags **@NEARProtocol** and **#NEARHackathon** (optionally @NearLegion and @NearBuilders), has the video or screenshots attached, leads with the user problem, and states NEAR's concrete role
-- [ ] Application via **nearhackathon.com/#apply** or `POST https://nearhackathon.com/api/applications`, **only after the human confirms the exact payload**. Fields: requestId (UUID, reused on retry), projectName, leadName, email, size, tracks `["privacy","security"]`, **mainnet** payout `nearAddress` (the team creates it), projectUrl, demoUrl, idea (20–2,000 characters), consent. No extra fields (`website` is a spam trap).
+- [ ] Application via **nearhackathon.com/#apply** or `POST https://nearhackathon.com/api/applications`, **only after the human confirms the exact payload**. Fields: requestId (UUID, reused on retry), projectName, leadName, email, size, tracks `["privacy","security"]`, **mainnet** payout `nearAddress` (the team creates it), projectUrl, demoUrl, idea (20-2,000 characters), consent. No extra fields (`website` is a spam trap).
 - [ ] One submission per repo. Fix mistakes at nearhackathon.com/request-changes and never resubmit.
 
 *Sources:* nearhackathon.com/HACKATHON.md · github.com/nearai/near-hackathon-prompt-examples/blob/main/SUBMITTING.md
