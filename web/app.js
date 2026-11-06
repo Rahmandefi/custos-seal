@@ -35,12 +35,7 @@ import {
   ensureSelector,
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
-import {
-  defaultTour,
-  renderTour,
-  bindTour,
-  resetTour,
-} from "./tour.js?v=__ASSET_V__";
+import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -101,7 +96,6 @@ const state = {
   sampleSalt: "",
   localFindings: {},
   showTour: false,
-  tour: defaultTour(),
 };
 
 function persistWalk() {
@@ -582,7 +576,7 @@ function viewCases() {
       <a class="kpi flag" href="#/finding"><div class="kh"><span class="ki">${svg("flag", 17)}</span>Findings</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding").length}</div><div class="ks">On-chain Finding receipts</div></a>
       <a class="kpi neutral" href="#/workspace"><div class="kh"><span class="ki">${svg("folder", 17)}</span>Open cases</div><div class="kv">1</div><div class="ks">Larkmoor Records Office</div></a>
     </div>
-    <div class="card tbl"><div class="tbar"><h2>Custody log</h2><span class="cnt">${state.statusLoading ? "…" : state.status?.receipt_count ?? 0}</span></div>
+    <div class="card tbl" data-tour-id="viewCustody"><div class="tbar"><h2>Custody log</h2><span class="cnt">${state.statusLoading ? "…" : state.status?.receipt_count ?? 0}</span></div>
     <table><thead><tr><th>Id</th><th>Kind</th><th>Case</th><th>Verdict</th><th>Actor</th><th></th></tr></thead>
     <tbody>${
       state.statusLoading
@@ -605,7 +599,7 @@ function viewWorkspace() {
       <a class="btn primary${state.setup.highlightAnalyze ? " ring" : ""}" href="#/analyze" id="ws-analyze">${svg("list", 17)}Analyze</a></div>
     <div class="split">
       <div class="lcol">
-        <div class="card tbl"><div class="tbar"><h2>Files</h2></div>
+        <div class="card tbl" data-tour-id="viewEvidence"><div class="tbar"><h2>Files</h2></div>
           <table><thead><tr><th>File</th><th>Note</th></tr></thead>
           <tbody>${files}</tbody></table>
         </div>
@@ -617,7 +611,7 @@ function viewWorkspace() {
               <span>From this machine</span>
             </label>
             <input id="ev-file" type="file" name="file" hidden />
-            <button class="ev-tile" type="button" id="load-sample">
+            <button class="ev-tile" type="button" id="load-sample" data-tour-id="addEvidence">
               ${svg("folder", 22)}
               <strong>Load the sample file</strong>
               <span>Use the example evidence</span>
@@ -749,7 +743,7 @@ function viewReceipt() {
     null,
     `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${esc(kindLabel(rec.kind))} · ${esc(rec.case_id)} · ${esc(rec.actor)}</p></div>
       ${rec.policy_verdict ? verdictChip(rec.policy_verdict) : kindChip(rec.kind)}</div>
-    <div class="card lim">
+    <div class="card lim" data-tour-id="genReceipt">
       <dl class="kv">
         <div><dt>Kind</dt><dd>${esc(kindLabel(rec.kind))}</dd></div>
         <div><dt>Verdict</dt><dd>${esc(kindLabel(rec.policy_verdict))}</dd></div>
@@ -815,7 +809,7 @@ function viewFinding() {
     null,
     rec
       ? `<div class="split find-split">
-        <div class="card det find-card">
+        <div class="card det find-card" data-tour-id="reviewFinding">
           <div class="dh"><div class="eyebrow">Finding</div><h2>On-chain Finding ${rec.id}</h2>
             <div class="dm">${verdictChip(rec.policy_verdict)} <span class="mono mut">${rec.finding?.model_id || ""}</span></div></div>
           ${local?.claim ? `<div class="dsec"><div class="dl">Claim</div><p class="lede">${esc(local.claim)}</p></div>` : ""}
@@ -832,7 +826,7 @@ function viewFinding() {
           <div class="dsec">${quotes || `<p class="lede">Open the original file in Verify from chain. A matching quote is marked: Citation check passed, byte-for-byte match.</p>`}</div>
         </aside>
       </div>`
-      : `<p class="lede empty">No findings yet. Run analysis to write a receipt.</p>`
+      : `<p class="lede empty" data-tour-id="reviewFinding">No findings yet. Run analysis to write a receipt.</p>`
   );
 }
 
@@ -903,7 +897,7 @@ function viewSecurity() {
     `<div class="hd"><div><div class="eyebrow">Security</div><h1>Can a stolen key move funds?</h1>
       <p class="lede">The app writer key is a function-call key. Try the four protocol rejections on testnet.</p></div></div>
     <div class="g">
-      <section class="card lim">
+      <section class="card lim" data-tour-id="security">
         <div class="lh"><span class="lic">${svg("key", 18)}</span><div><h2>Writer key</h2><div class="sub">Not your wallet key.</div></div></div>
         <dl class="kv">
           <div><dt>Account</dt><dd class="mono" title="${esc(state.status?.writer || "ftwriter15e434.testnet")}">${esc(shortAccount(state.status?.writer || "ftwriter15e434.testnet"))}</dd></div>
@@ -934,7 +928,7 @@ function viewApprovals() {
       const full = state.receipts[r.id] || r;
       const hashes = (full.finding?.citation_hashes || []).map((h) => `<div class="hash">${hexOf(h)}</div>`).join("");
       const why = r.reason || "Policy P4: irreversible actions wait for a human.";
-      return `<article class="card det" style="padding:0">
+      return `<article class="card det" data-tour-id="approveAction" style="padding:0">
         <div class="dh"><div class="eyebrow">HOLD</div><h2>HOLD · receipt ${r.id}</h2>
           <div class="dm">${verdictChip(r.policy_verdict)} receipt ${r.id} · ${r.case_id}</div></div>
         <div class="dsec"><div class="dl">Why it was held</div><p class="lede">${esc(why)}</p></div>
@@ -957,7 +951,7 @@ function viewApprovals() {
     crumb("Approvals"),
     null,
     `<div class="hd"><div><h1>Approvals</h1><p class="lede">HOLD receipts from the contract. Reject is the default. The app never performs the action itself.</p></div></div>
-    ${cards || `<div class="card" style="padding:24px;text-align:center"><p class="lede empty">No actions waiting for approval</p></div>`}`
+    ${cards || `<div class="card" data-tour-id="approveAction" style="padding:24px;text-align:center"><p class="lede empty">No actions waiting for approval</p></div>`}`
   );
 }
 
@@ -991,7 +985,7 @@ function viewAccess() {
       <input name="account_note" placeholder="reason" style="height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
       <button class="btn" type="submit">Request open</button>
     </form>
-    <div class="card tbl"><div class="tbar"><h2>Denied attempts</h2></div>
+    <div class="card tbl" data-tour-id="accessHistory"><div class="tbar"><h2>Denied attempts</h2></div>
       <table><thead><tr><th>Account</th><th>Kind</th><th>Receipt</th></tr></thead>
       <tbody>${denied || `<tr><td colspan="3" class="empty">No denied attempts on chain.</td></tr>`}</tbody></table>
     </div>`
@@ -1025,7 +1019,7 @@ function viewReports() {
         <button class="btn" id="export-pdf">${svg("report", 16)}Export PDF</button>
       </div></div>
     ${state.exportMsg ? `<p class="wiz-err">${esc(state.exportMsg)}</p>` : ""}
-    <div class="kpis">
+    <div class="kpis" data-tour-id="openReport">
       <div class="kpi neutral"><div class="kh">Receipts on chain</div><div class="kv">${n("receipt_count")}</div></div>
       <div class="kpi flag"><div class="kh">Findings</div><div class="kv">${n("finding_count")}</div></div>
       <div class="kpi hold"><div class="kh">HOLD (waiting / total)</div><div class="kv">${n("pending_hold_count")} / ${n("hold_count")}</div></div>
@@ -1098,9 +1092,6 @@ function wizardPane() {
 }
 
 function viewSetup() {
-  if (state.showTour) {
-    return `<div class="wiz-page tour-page">${renderTour(state.tour)}</div>`;
-  }
   const s = state.setup;
   const idx = Math.max(0, setupIndex(s.step));
   const valid = setupValid(s, state.wallet);
@@ -1204,16 +1195,6 @@ function render() {
     el.classList.toggle("land-mode", state.view === "land" || state.view === "setup");
     el.innerHTML = fn();
     bind();
-    if (state.showTour) {
-      bindTour(state.tour, {
-        onChange: () => render(),
-        onExitToParent: () => {
-          resetTour(state.tour);
-          state.showTour = false;
-          render();
-        },
-      });
-    }
   } catch (e) {
     state.fatal = String(e.message || e);
     el.innerHTML = `<div class="land"><div class="land-card"><h1>Something went wrong</h1><p class="lede">${esc(
@@ -1285,9 +1266,27 @@ function bindSetup() {
   const nw = document.getElementById("wiz-nowallet");
   if (nw) {
     nw.onclick = () => {
-      resetTour(state.tour);
+      state.setup.skipped = true;
+      state.setup.completed = true;
+      persistSetup();
+      state.walk.skipped = true;
+      persistWalk();
       state.showTour = true;
-      render();
+      const go = () => {
+        startGuidedTour({
+          onExit: () => {
+            state.showTour = false;
+          },
+        });
+      };
+      if (location.hash !== "#/workspace") {
+        location.hash = "#/workspace";
+        requestAnimationFrame(go);
+      } else {
+        state.view = "workspace";
+        render();
+        requestAnimationFrame(go);
+      }
     };
   }
   const back = document.getElementById("wiz-back");
