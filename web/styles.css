@@ -299,6 +299,63 @@
 .src-card .i{color:var(--q)}
 .src-card.on .i{color:var(--q)}
 .ev-src{margin-top:4px}
+#ev-form{
+  min-width:0;
+  overflow:hidden;
+  padding:16px 20px;
+  display:grid;
+  gap:12px;
+}
+#ev-form .ev-tiles{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;
+  min-width:0;
+}
+#ev-form .ev-tile{
+  min-width:0;
+  box-sizing:border-box;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  gap:8px;
+  padding:18px 16px;
+  min-height:108px;
+  border:1px solid var(--be);
+  border-radius:12px;
+  background:var(--r);
+  cursor:pointer;
+  font:inherit;
+  color:inherit;
+}
+#ev-form .ev-tile .i{color:var(--q)}
+#ev-form .ev-tile strong{font-size:14.5px}
+#ev-form .ev-tile span{font-size:13px;color:var(--u)}
+#ev-form .hash,
+#ev-form .copyval{
+  overflow-wrap:anywhere;
+  word-break:break-all;
+  margin:4px 0 8px;
+  min-width:0;
+}
+#ev-form .copyval{display:flex;align-items:center;gap:8px;flex-wrap:wrap;word-break:normal}
+#ev-form .copyval .mono{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0;
+  flex:1 1 140px;
+}
+#ev-form .dsec{
+  padding:12px 0 0;
+  border-top:1px solid var(--be);
+  border-bottom:0;
+  min-width:0;
+}
+#ev-form .dl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.lcol,.split{min-width:0}
 .brand{
   flex:0 1 auto;
   max-width:min(260px,34vw);

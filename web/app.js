@@ -592,15 +592,15 @@ function viewWorkspace() {
           <table><thead><tr><th>File</th><th>Note</th></tr></thead>
           <tbody>${files}</tbody></table>
         </div>
-        <form id="ev-form" class="card" style="padding:16px 20px;display:grid;gap:12px">
-          <div class="src-grid ev-src">
-            <label class="src-card" for="ev-file">
+        <form id="ev-form" class="card">
+          <div class="ev-tiles">
+            <label class="ev-tile" for="ev-file">
               ${svg("file", 22)}
               <strong>Upload a file</strong>
               <span>From this machine</span>
             </label>
             <input id="ev-file" type="file" name="file" hidden />
-            <button class="src-card" type="button" id="load-sample">
+            <button class="ev-tile" type="button" id="load-sample">
               ${svg("folder", 22)}
               <strong>Load the sample file</strong>
               <span>Sample case: training data</span>
@@ -608,9 +608,11 @@ function viewWorkspace() {
           </div>
           ${
             w.commitment
-              ? `<div class="dsec"><div class="dl">Salted commitment</div><p class="hash">${w.commitment}</p>
-                 <span class="fx">encrypted at rest</span>
-                 <p class="lede">Next: run the analysis</p></div>`
+              ? `<div class="dsec">
+                  <div class="dl">Salted commitment <span class="fx">encrypted at rest</span></div>
+                  ${copyVal(w.commitment)}
+                  <a class="lnk" href="#/analyze">Next: run the analysis ${svg("arrow", 13)}</a>
+                </div>`
               : ""
           }
         </form>
