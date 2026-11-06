@@ -359,6 +359,20 @@
 .hd-ev{display:flex;flex-direction:column;align-items:flex-start;gap:0}
 #ws-analyze{margin-top:16px;text-decoration:none}
 #ws-analyze.ring{box-shadow:0 0 0 3px rgba(31,79,209,.25)}
+.find-split,.find-card,.find-card .dsec{min-width:0}
+.cite-list{display:grid;gap:8px;min-width:0}
+.cite-chip{
+  min-width:0;max-width:100%;box-sizing:border-box;
+  overflow:hidden;display:flex;align-items:center;gap:8px;
+  padding:6px 8px;border-radius:6px;
+  background:var(--h);border:1px solid var(--l);
+}
+.cite-chip .mono{
+  min-width:0;flex:1 1 auto;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:500 13px var(--ba);
+}
+.cite-chip .copy{flex:none}
 .brand{
   flex:0 1 auto;
   max-width:min(260px,34vw);

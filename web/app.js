@@ -231,6 +231,13 @@ function verdictChip(v) {
   return `<span class="v ${cls}">${svg(ic, 13, 2.5)}${name}</span>`;
 }
 
+function citeChip(h) {
+  const s = hexOf(h) || String(h || "");
+  const vis = s.length > 24 ? `${s.slice(0, 16)}…${s.slice(-8)}` : s;
+  return `<div class="cite-chip" title="${esc(s)}"><span class="mono">${esc(vis)}</span>
+    <button type="button" class="copy" data-copy="${encodeURIComponent(s)}">${svg("copy", 13)}Copy</button></div>`;
+}
+
 function shortHash(h) {
   const s = Array.isArray(h)
     ? Array.from(h)
@@ -785,15 +792,15 @@ function viewFinding() {
     crumb("Findings"),
     null,
     rec
-      ? `<div class="split">
-        <div class="card det">
+      ? `<div class="split find-split">
+        <div class="card det find-card">
           <div class="dh"><div class="eyebrow">Finding</div><h2>On-chain Finding ${rec.id}</h2>
             <div class="dm">${verdictChip(rec.policy_verdict)} <span class="mono mut">${rec.finding?.model_id || ""}</span></div></div>
           ${local?.claim ? `<div class="dsec"><div class="dl">Claim</div><p class="lede">${esc(local.claim)}</p></div>` : ""}
           <div class="dsec"><div class="dl">Citation hashes</div>
-            ${(rec.finding?.citation_hashes || [])
-              .map((h) => `<div class="hash" style="background:var(--h);border:1px solid var(--l);border-radius:6px;padding:6px 8px">${hexOf(h) || shortHash(h)}</div>`)
-              .join("") || citeEmpty}
+            <div class="cite-list">${
+              (rec.finding?.citation_hashes || []).map(citeChip).join("") || citeEmpty
+            }</div>
           </div>
           <div class="dsec"><a class="lnk" href="#/receipt/${rec.id}">Open receipt ${svg("arrow", 13)}</a></div>
         </div>
