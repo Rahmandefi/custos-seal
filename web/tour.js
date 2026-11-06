@@ -473,8 +473,7 @@ class GuidedTour {
             }>${this.index === this.steps.length - 1 ? "Finish" : "Next"}</button>
             <button type="button" class="tour-btn" data-tour="skip">Skip step</button>
             <button type="button" class="tour-btn" data-tour="exit">Exit tour</button>
-          </div>
-          <p class="tour-foot">Instructions are the original tour wording. Next only moves to the next highlighted area; it does not perform the step in the app.</p>`
+          </div>`
         }
       </div>`;
 
