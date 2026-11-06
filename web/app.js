@@ -590,10 +590,20 @@ function viewWorkspace() {
           <table><thead><tr><th>File</th><th>Note</th></tr></thead>
           <tbody>${files}</tbody></table>
         </div>
-        <form id="ev-form" class="card" style="padding:16px 20px;display:grid;gap:10px">
-          <label class="dl">Upload a file</label>
-          <input type="file" name="file" />
-          <button class="btn" type="button" id="load-sample">${svg("file", 16)}Load the sample file</button>
+        <form id="ev-form" class="card" style="padding:16px 20px;display:grid;gap:12px">
+          <div class="src-grid ev-src">
+            <label class="src-card" for="ev-file">
+              ${svg("file", 22)}
+              <strong>Upload a file</strong>
+              <span>From this machine</span>
+            </label>
+            <input id="ev-file" type="file" name="file" hidden />
+            <button class="src-card" type="button" id="load-sample">
+              ${svg("folder", 22)}
+              <strong>Load the sample file</strong>
+              <span>Sample case: training data</span>
+            </button>
+          </div>
           ${
             w.commitment
               ? `<div class="dsec"><div class="dl">Salted commitment</div><p class="hash">${w.commitment}</p>
@@ -1006,11 +1016,13 @@ function wizardPane() {
   const s = state.setup;
   const wlt = state.wallet;
   if (s.step === "connect") {
-    return `<h1>Connect</h1>
+    return `<div class="wiz-connect">
+      <h1>Connect</h1>
       <p class="lede">Sign in with a NEAR testnet wallet. The server writer key still signs receipts.</p>
       ${wlt.error ? `<p class="wiz-err">${esc(wlt.error)}. Press Connect wallet to try again.</p>` : ""}
       <button class="btn primary" type="button" id="connect-btn">${svg("link", 16)}Connect wallet</button>
-      <p><button class="btn ghost" type="button" id="wiz-nowallet">Continue without wallet</button></p>`;
+      <button class="btn ghost" type="button" id="wiz-nowallet">Continue without wallet</button>
+    </div>`;
   }
   if (s.step === "connected") {
     const id = wlt.accountId || "";
@@ -1024,12 +1036,14 @@ function wizardPane() {
       <input type="file" name="file" id="wiz-file" hidden />
       <div class="src-grid">
         <button type="button" class="src-card${s.source === "upload" ? " on" : ""}" id="wiz-upload">
+          ${svg("file", 22)}
           <strong>Upload evidence</strong>
-          <span>Existing upload. Feeds analysis.</span>
+          <span>From this machine</span>
         </button>
         <button type="button" class="src-card${s.source === "sample" ? " on" : ""}" id="wiz-sample">
+          ${svg("folder", 22)}
           <strong>Load the sample case</strong>
-          <span>Sample case: training data.</span>
+          <span>Sample case: training data</span>
         </button>
       </div>
       ${
@@ -1101,7 +1115,7 @@ function viewSetup() {
       </svg>
     </div>
     <header class="wiz-logo">
-      <span class="wiz-mark">${svg("shield", 22)}</span>
+      <span class="wiz-mark">${svg("shield", 28)}</span>
       <div class="wiz-brand">
         <span class="wiz-title">Custos Seal</span>
         <span class="wiz-sub">Private Forensic Triage Assistant</span>
@@ -1116,11 +1130,11 @@ function viewSetup() {
       </div>`
         : ""
     }
-    <div class="wiz-card card">
+    <div class="wiz-card card${isConnect ? " wiz-card--connect" : ""}">
       <ol class="wiz-steps-h" aria-label="Setup">${steps}</ol>
       <div class="wiz-body">
         ${wizardPane()}
-        <div class="wiz-nav">
+        <div class="wiz-nav${isConnect ? " wiz-nav--solo" : ""}">
           <button class="btn" type="button" id="wiz-back"${idx === 0 ? " disabled" : ""}>Back</button>
           <button class="btn ghost" type="button" id="wiz-skip">Skip setup</button>
           <div class="sp"></div>

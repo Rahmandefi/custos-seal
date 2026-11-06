@@ -56,7 +56,6 @@
 .app.land-mode{display:block;height:100%;min-width:0;background:var(--bg)}
 .wiz-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 16px;gap:20px}
 .wiz-logo{display:flex;align-items:center;gap:10px;font:600 18px var(--z);color:var(--y)}
-.wiz-logo svg{color:var(--q)}
 .wiz-card{width:min(680px,100%);padding:0;overflow:hidden}
 .wiz-steps-h{display:flex;gap:8px;list-style:none;margin:0;padding:16px 20px 0;flex-wrap:nowrap;overflow:auto}
 .wiz-steps-h li{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;font-weight:600;color:var(--s)}
@@ -183,17 +182,25 @@
 .wiz-logo{
   display:flex; align-items:center; gap:12px;
   color:#fff; align-self:center;
+  padding:8px 18px 8px 8px;
+  border-radius:999px;
+  background:rgba(7,12,22,.72);
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:0 10px 28px rgba(0,0,0,.35);
+  backdrop-filter:blur(12px);
 }
 .wiz-mark{
-  width:44px; height:44px; border-radius:12px;
+  width:52px; height:52px; border-radius:14px;
   display:grid; place-items:center;
-  background:linear-gradient(145deg,#2A5BE0,#1A3BA0);
-  box-shadow:0 0 0 1px rgba(255,255,255,.1) inset, 0 8px 24px rgba(31,79,209,.35);
+  background:linear-gradient(145deg,#4C7AFF,#1F4FD1);
+  box-shadow:0 0 0 1px rgba(255,255,255,.28) inset, 0 8px 20px rgba(31,79,209,.45);
   color:#fff;
 }
-.wiz-brand{display:flex; flex-direction:column; line-height:1.15}
-.wiz-title{font-size:18px; font-weight:600; letter-spacing:-.02em}
-.wiz-sub{font-size:12px; color:#C9D2E0; font-weight:500}
+.wiz-page .wiz-mark .i,
+.wiz-page .wiz-mark svg{color:#fff; stroke:#fff}
+.wiz-brand{display:flex; flex-direction:column; line-height:1.15; min-width:0}
+.wiz-title{font-size:20px; font-weight:700; letter-spacing:-.02em; color:#fff}
+.wiz-sub{font-size:12px; color:#E7ECF3; font-weight:500}
 .wiz-hero{
   max-width:560px; text-align:center;
   color:#E7ECF3;
@@ -250,6 +257,48 @@
 .wiz-foot{margin:0; text-align:center; max-width:480px; color:#8E9AAE; font-size:12.5px}
 .wiz-body>.btn.primary{min-width:180px;width:fit-content;justify-self:start}
 .wiz-body .btn.ghost{background:transparent}
+.wiz-card--connect .wiz-steps-h{justify-content:center}
+.wiz-card--connect .wiz-body{
+  justify-items:center;
+  text-align:center;
+  padding:28px 28px 22px;
+  gap:18px;
+}
+.wiz-connect{display:grid; gap:12px; justify-items:center; width:100%}
+.wiz-connect h1{margin:0; font-size:22px}
+.wiz-connect .lede{margin:0; max-width:34ch; color:var(--u)}
+.wiz-connect .btn.primary{
+  width:min(280px,100%);
+  min-width:0;
+  justify-self:center;
+}
+.wiz-connect .btn.ghost{
+  height:40px;
+  color:var(--u);
+  border-color:transparent;
+  box-shadow:none;
+}
+.wiz-nav--solo{
+  justify-content:center;
+  width:100%;
+  padding-top:4px;
+  border-top:0;
+  margin-top:0;
+}
+.wiz-nav--solo #wiz-back,
+.wiz-nav--solo .sp{display:none}
+.src-grid{align-items:stretch}
+.src-card{
+  min-height:108px;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  gap:8px;
+  padding:18px 16px;
+}
+.src-card .i{color:var(--q)}
+.src-card.on .i{color:var(--q)}
+.ev-src{margin-top:4px}
 .brand{
   flex:0 1 auto;
   max-width:min(260px,34vw);
