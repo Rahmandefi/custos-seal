@@ -275,7 +275,9 @@ function caseName() {
   return state.setup.caseName || state.walk.caseName || "Larkmoor Records Office";
 }
 function crumb(page) {
-  return `Cases <span>›</span> ${esc(caseName())} <span>›</span> <b>${page}</b>`;
+  const name = `<span class="crumb-case">${esc(caseName())}</span>`;
+  if (!page || page === "Cases") return name;
+  return `${name}<span class="crumb-sep" aria-hidden="true">/</span><b>${page}</b>`;
 }
 
 function rail(active) {
@@ -547,7 +549,7 @@ function viewCases() {
       : "";
   return shell(
     "cases",
-    "<b>Cases</b>",
+    crumb("Cases"),
     null,
     `<div class="hd"><div><h1>Cases</h1><p class="lede">The case is the home. Live receipts from testnet are listed below.</p></div>
       <div style="display:flex;gap:8px">
