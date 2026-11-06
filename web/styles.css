@@ -469,6 +469,39 @@ mark.cite.pending{background:var(--h);color:var(--bb)}
   .tbl table{min-width:0}
   .content{flex:1;overflow-y:auto;padding-bottom:20px}
 }
+.tour-page{align-items:stretch;justify-content:flex-start;padding:32px 16px 48px}
+.tour-root{
+  position:relative;z-index:1;width:min(860px,100%);margin:0 auto;
+  color:var(--y);background:rgba(255,255,255,.97);
+  border:1px solid rgba(255,255,255,.12);border-radius:16px;
+  padding:20px;box-shadow:0 24px 64px rgba(0,0,0,.35);
+}
+.tour-banner{
+  padding:14px;margin-bottom:16px;background:var(--h);
+  border:1px solid var(--l);border-radius:8px;
+}
+.tour-panel{
+  padding:20px;margin-bottom:16px;background:var(--r);
+  border:1px solid var(--be);border-radius:10px;
+}
+.tour-panel h2{margin:0 0 8px;font-size:22px}
+.tour-panel h3{margin:12px 0 8px;font-size:16px}
+.tour-nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.tour-sec{padding:8px 10px;border-radius:8px;background:var(--r);border:1px solid var(--be);font-size:13px}
+.tour-sec.on{background:var(--b);color:var(--q);font-weight:700;border-color:var(--q)}
+.tour-row{display:flex;flex-wrap:wrap;gap:10px}
+.tour-hit{
+  border:3px solid var(--q) !important;
+  background:var(--b) !important;
+  color:var(--y) !important;
+  font-weight:700;
+  box-shadow:0 0 0 3px rgba(31,79,209,.25);
+}
+.tour-result{
+  padding:16px;margin-bottom:16px;border-radius:10px;
+  border:1px solid var(--m);background:var(--p);
+}
+.tour-list{margin:0 0 16px;padding-left:20px}
 @media (max-width:480px){
   .wiz-steps-h{display:block;padding:14px 18px 0}
   .wiz-steps-h li{display:none}

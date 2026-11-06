@@ -35,6 +35,12 @@ import {
   ensureSelector,
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
+import {
+  defaultTour,
+  renderTour,
+  bindTour,
+  resetTour,
+} from "./tour.js?v=__ASSET_V__";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -94,6 +100,8 @@ const state = {
   sampleText: "",
   sampleSalt: "",
   localFindings: {},
+  showTour: false,
+  tour: defaultTour(),
 };
 
 function persistWalk() {
@@ -1046,7 +1054,7 @@ function wizardPane() {
       <p class="lede">Sign in with a NEAR testnet wallet. The server writer key still signs receipts.</p>
       ${wlt.error ? `<p class="wiz-err">${esc(wlt.error)}. Press Connect wallet to try again.</p>` : ""}
       <button class="btn primary" type="button" id="connect-btn">${svg("link", 16)}Connect wallet</button>
-      <button class="btn ghost" type="button" id="wiz-nowallet">Continue without wallet</button>
+      <button class="btn ghost" type="button" id="wiz-nowallet">Take a guided tour</button>
     </div>`;
   }
   if (s.step === "connected") {
@@ -1090,6 +1098,9 @@ function wizardPane() {
 }
 
 function viewSetup() {
+  if (state.showTour) {
+    return `<div class="wiz-page tour-page">${renderTour(state.tour)}</div>`;
+  }
   const s = state.setup;
   const idx = Math.max(0, setupIndex(s.step));
   const valid = setupValid(s, state.wallet);
@@ -1193,6 +1204,16 @@ function render() {
     el.classList.toggle("land-mode", state.view === "land" || state.view === "setup");
     el.innerHTML = fn();
     bind();
+    if (state.showTour) {
+      bindTour(state.tour, {
+        onChange: () => render(),
+        onExitToParent: () => {
+          resetTour(state.tour);
+          state.showTour = false;
+          render();
+        },
+      });
+    }
   } catch (e) {
     state.fatal = String(e.message || e);
     el.innerHTML = `<div class="land"><div class="land-card"><h1>Something went wrong</h1><p class="lede">${esc(
@@ -1264,9 +1285,8 @@ function bindSetup() {
   const nw = document.getElementById("wiz-nowallet");
   if (nw) {
     nw.onclick = () => {
-      state.setup.noWallet = true;
-      state.setup.step = "source";
-      persistSetup();
+      resetTour(state.tour);
+      state.showTour = true;
       render();
     };
   }
