@@ -77,6 +77,27 @@ export async function openWalletPicker() {
   m.show();
 }
 
+export async function signFunctionCall({
+  receiverId,
+  methodName,
+  args,
+  gas = "30000000000000",
+  deposit = "0",
+}) {
+  const { selector } = await ensureSelector();
+  if (!selector.isSignedIn()) throw new Error("Connect a wallet first");
+  const w = await selector.wallet();
+  return w.signAndSendTransaction({
+    receiverId,
+    actions: [
+      {
+        type: "FunctionCall",
+        params: { methodName, args, gas, deposit },
+      },
+    ],
+  });
+}
+
 export async function signOutWallet() {
   const { selector: sel } = await ensureSelector();
   const w = await sel.wallet();

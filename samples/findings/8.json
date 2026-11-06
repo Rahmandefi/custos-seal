@@ -1,0 +1,22 @@
+{
+  "receipt_id": 8,
+  "claim": "Synthetic host isolation recommendation for host xfer-01 related to a newly created file in MOVEit Transfer webroot.",
+  "citations": [
+    {
+      "quote": "host xfer-01 C:\\MOVEitTransfer\\wwwroot\\human2.aspx created 2023-06-01 02:39",
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 4
+    },
+    {
+      "quote": "RECOMMENDED ACTION: isolate_host",
+      "evidence_id": "E1",
+      "line_start": 4,
+      "line_end": 4
+    }
+  ],
+  "actions": ["isolate_host"],
+  "iocs": ["xfer-01", "C:\\MOVEitTransfer\\wwwroot\\human2.aspx"],
+  "confidence": 1,
+  "fictional": true
+}

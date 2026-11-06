@@ -287,3 +287,6 @@
   .tbl{overflow-x:auto}
   .tbl table{min-width:560px}
 }
+mark.cite{padding:0 2px;border-radius:3px}
+mark.cite.ok{background:var(--p);color:var(--bh)}
+mark.cite.bad{background:var(--d);color:var(--w)}

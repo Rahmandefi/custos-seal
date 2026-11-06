@@ -33,6 +33,7 @@ import {
   signOutWallet,
   syncFromSelector,
   ensureSelector,
+  signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 
 const P = {
@@ -90,6 +91,9 @@ const state = {
   filterQ: "",
   busy: null,
   fatal: null,
+  sampleText: "",
+  sampleSalt: "",
+  localFindings: {},
 };
 
 function persistWalk() {
@@ -190,6 +194,26 @@ function kindLabel(k) {
   if (k == null || k === "") return "—";
   if (typeof k === "object") return Object.keys(k)[0] || "—";
   return String(k);
+}
+
+function kindChip(kind) {
+  const k = kindLabel(kind);
+  if (k === "Open") return `<span class="v accept">${svg("check", 13, 2.5)}OPEN</span>`;
+  if (k === "OpenDenied") return `<span class="v block">${svg("block", 13, 2.5)}OPEN DENIED</span>`;
+  if (k === "Rejection") return `<span class="v block">${svg("block", 13, 2.5)}REJECTION</span>`;
+  if (k === "Approval") return `<span class="v accept">${svg("check", 13, 2.5)}APPROVAL</span>`;
+  return `<span class="v hold">${esc(k)}</span>`;
+}
+
+function verdictOrKind(r) {
+  return r.policy_verdict ? verdictChip(r.policy_verdict) : kindChip(r.kind);
+}
+
+function writeFailMsg(data, status) {
+  if (status === 401 || data?.error === "unauthorized") {
+    return "Demo mode is off: this action needs an operator token";
+  }
+  return data?.error || data?.detail || data?.message || "request failed";
 }
 
 function verdictChip(v) {
@@ -342,7 +366,10 @@ function searchHits() {
   const list = state.status?.receipts || [];
   for (const r of list) {
     const full = state.receipts[r.id];
-    const blob = (JSON.stringify(r) + " " + (full ? JSON.stringify(full, bytesToHexReplacer) : "")).toLowerCase();
+    const local = state.localFindings?.[r.id];
+    const extra = local ? JSON.stringify(local) : "";
+    const sample = state.sampleText || "";
+    const blob = (JSON.stringify(r) + " " + (full ? JSON.stringify(full, bytesToHexReplacer) : "") + " " + extra + " " + sample).toLowerCase();
     if (blob.includes(q)) {
       hits.push({ type: "Receipts", label: `Receipt ${r.id} · ${kindLabel(r.kind)}`, href: `#/receipt/${r.id}` });
       const k = kindLabel(r.kind);
@@ -502,7 +529,7 @@ function viewCases() {
       <td class="mono ts">${r.id}</td>
       <td>${kindLabel(r.kind)}</td>
       <td>${r.case_id || ""}</td>
-      <td>${verdictChip(r.policy_verdict)}</td>
+      <td>${verdictOrKind(r)}</td>
       <td class="mono acc">${r.actor || ""}</td>
       <td><a class="lnk" href="#/receipt/${r.id}">Open ${svg("arrow", 13)}</a></td>
     </tr>`
@@ -690,7 +717,7 @@ function viewReceipt() {
     crumb(`Receipt ${rec.id}`),
     null,
     `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${esc(kindLabel(rec.kind))} · ${esc(rec.case_id)} · ${esc(rec.actor)}</p></div>
-      ${rec.policy_verdict ? verdictChip(rec.policy_verdict) : ""}</div>
+      ${rec.policy_verdict ? verdictChip(rec.policy_verdict) : kindChip(rec.kind)}</div>
     <div class="card lim">
       <dl class="kv">
         <div><dt>Kind</dt><dd>${esc(kindLabel(rec.kind))}</dd></div>
@@ -701,7 +728,9 @@ function viewReceipt() {
         ${findingRows}
         <div><dt>Previous receipt hash</dt><dd class="mono">${hx(rec.prev_hash)}</dd></div>
         <div><dt>On chain</dt><dd><a class="lnk" href="${NEARBLOCKS}/address/${contract}" target="_blank" rel="noreferrer">${esc(contract)} on NearBlocks ${svg("arrow", 13)}</a>
-          <span class="mut">Transaction link needs the tx hash, which the API does not store yet.</span></dd></div>
+          ${rec.tx
+            ? `<a class="lnk" href="${explorerTx(rec.tx)}" target="_blank" rel="noreferrer">NearBlocks transaction ${svg("arrow", 13)}</a>`
+            : `<span class="mut">No tx hash indexed for this receipt yet.</span>`}</dd></div>
       </dl>
     </div>
     <form id="verify-form" class="card" style="padding:16px 20px">
@@ -709,7 +738,7 @@ function viewReceipt() {
       <p class="lede">Recomputes the evidence fingerprint from the original file and salt. No NEAR AI Cloud call.</p>
       <input type="hidden" name="id" value="${rec.id}" />
       <label class="dl">Original file</label><input type="file" name="file" required />
-      <label class="dl">Salt (hex)</label><input class="hash" name="salt" value="${state.walk.salt || ""}" placeholder="64 hex chars" style="width:100%;height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
+      <label class="dl">Salt (hex)</label><input class="hash" name="salt" value="${state.walk.salt || state.sampleSalt || ""}" placeholder="64 hex chars" style="width:100%;height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
       <button class="btn" type="submit">${svg("shieldok", 16)}Verify from chain</button>
       ${
         state.verify
@@ -729,7 +758,14 @@ function viewFinding() {
   const last = findings[findings.length - 1];
   if (last && !(last.id in state.receipts)) getReceipt(last.id).then(render);
   const rec = last ? state.receipts[last.id] || last : null;
+  const local = last ? state.localFindings[last.id] : null;
   const citeEmpty = last && !(last.id in state.receipts) ? "<p class='mut'>Loading…</p>" : "<p class='mut'>None</p>";
+  const quotes = (local?.citations || []).map((c) => {
+    const q = c.quote || "";
+    const inSample = (state.sampleText || "").includes(q);
+    return `<p><mark class="cite ${inSample ? "ok" : "bad"}">${esc(q)}</mark></p>`;
+  }).join("");
+  const citePass = local?.citations?.length && (local.citations || []).every((c) => (state.sampleText || "").includes(c.quote || ""));
   return shell(
     "finding",
     crumb("Findings"),
@@ -739,6 +775,7 @@ function viewFinding() {
         <div class="card det">
           <div class="dh"><div class="eyebrow">Finding</div><h2>On-chain Finding ${rec.id}</h2>
             <div class="dm">${verdictChip(rec.policy_verdict)} <span class="mono mut">${rec.finding?.model_id || ""}</span></div></div>
+          ${local?.claim ? `<div class="dsec"><div class="dl">Claim</div><p class="lede">${esc(local.claim)}</p></div>` : ""}
           <div class="dsec"><div class="dl">Citation hashes</div>
             ${(rec.finding?.citation_hashes || [])
               .map((h) => `<div class="hash" style="background:var(--h);border:1px solid var(--l);border-radius:6px;padding:6px 8px">${hexOf(h) || shortHash(h)}</div>`)
@@ -747,8 +784,9 @@ function viewFinding() {
           <div class="dsec"><a class="lnk" href="#/receipt/${rec.id}">Open receipt ${svg("arrow", 13)}</a></div>
         </div>
         <aside class="card det">
-          <div class="dh"><div class="eyebrow">Evidence viewer</div><h2>Byte-for-byte citations</h2></div>
-          <div class="dsec"><p class="lede">Open the original file in Verify from chain. A matching quote is marked: Citation check passed, byte-for-byte match.</p></div>
+          <div class="dh"><div class="eyebrow">Evidence viewer</div><h2>Byte-for-byte citations</h2>
+            ${citePass ? `<p class="recd">Citation check passed</p>` : `<p class="mut">Load the sample file to check quotes.</p>`}</div>
+          <div class="dsec">${quotes || `<p class="lede">Open the original file in Verify from chain. A matching quote is marked: Citation check passed, byte-for-byte match.</p>`}</div>
         </aside>
       </div>`
       : `<p class="lede empty">No findings yet. Run analysis to write a receipt.</p>`
@@ -772,30 +810,49 @@ function viewCustody() {
       <label class="dl">Expected receipt id</label>
       <input name="expected_receipt_id" value="${rid}" style="height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
       <label class="dl">Evidence commitment (hex)</label>
-      <input name="evidence_commitment" class="mono" value="${w.commitment || ""}" placeholder="64-byte hex" style="height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
-      <label class="ack"><input type="checkbox" name="matched" /> File matches the custody record</label>
+      <input name="evidence_commitment" class="mono" value="${state.custodyMsg?.commitment || w.commitment || ""}" placeholder="64-byte hex" style="height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
       <button class="btn primary" type="submit">${svg("link", 17)}Record custody check</button>
     </form>
-    <p class="lede">Uncheck the box to record a BREAK (BLOCK). Check it to record a match (ACCEPT).</p>`
+    <p class="lede">The recorded verdict is the fingerprint comparison against the on-chain receipt.</p>`
   );
+}
+
+function securityResult(atk) {
+  if (!atk) return "";
+  if (atk.error === "unauthorized" || atk.status === 401 || atk.code === "unauthorized") {
+    return `<div class="res" style="border-color:var(--l);background:var(--h)">
+      <div class="rh">Demo mode is off: this action needs an operator token</div>
+      <p class="rline">Nothing was sent to NEAR. Set DEMO_MODE=1 on the host, or paste an operator token for a private run.</p>
+    </div>`;
+  }
+  if (atk.error && !atk.rejected && !atk.tx_hash) {
+    return `<div class="res" style="border-color:var(--g);background:var(--d)">
+      <div class="rh">Attempt failed before send</div>
+      <p class="rline">${esc(atk.error || atk.message || "unknown error")}</p>
+    </div>`;
+  }
+  const rejected = !!atk.rejected;
+  return `<div class="res">
+    <div class="rtop"><div class="rsh">${svg("shieldok", 34, 1.8)}</div>
+      <div><div class="rey">${esc(atk.label || "")}</div>
+      <div class="rh">${rejected ? "Rejected by NEAR before it ran" : "Unexpected: transaction accepted"}</div></div></div>
+    <p class="rline">${rejected
+      ? "Rejected before execution, nothing was recorded, no funds moved."
+      : "A transaction hash was returned — inspect it on NearBlocks."}</p>
+    ${atk.expect || atk.error ? `<div class="rerr"><span class="rl">${rejected ? "NEAR protocol error" : "Detail"}</span>
+      <span class="code">${esc(atk.expect || atk.error)}</span></div>` : ""}
+    <div class="facts">
+      <div><span>Funds moved</span><b>0 NEAR</b></div>
+      <div><span>Recorded</span><b>Nothing</b></div>
+      <div><span>Explorer</span><b>${atk.tx_hash ? `<a class="lnk" href="${explorerTx(atk.tx_hash)}" target="_blank" rel="noreferrer">tx</a>` : "None"}</b></div>
+      <div><span>Hash</span><b>${esc(atk.tx_hash || "none")}</b></div>
+    </div>
+  </div>`;
 }
 
 function viewSecurity() {
   const atk = state.attack;
-  const result = atk
-    ? `<div class="res">
-        <div class="rtop"><div class="rsh">${svg("shieldok", 34, 1.8)}</div>
-          <div><div class="rey">${atk.label}</div><div class="rh">${atk.rejected ? "Rejected by NEAR before it ran" : "Unexpected: transaction accepted"}</div></div></div>
-        <p class="rline">Rejected before execution, nothing was recorded, no funds moved.</p>
-        <div class="rerr"><span class="rl">NEAR protocol error</span><span class="code">${atk.expect}</span></div>
-        <div class="facts">
-          <div><span>Funds moved</span><b>0 NEAR</b></div>
-          <div><span>Recorded</span><b>Nothing</b></div>
-          <div><span>Explorer link</span><b>None: nothing executed</b></div>
-          <div><span>Hash</span><b>${atk.tx_hash || "none"}</b></div>
-        </div>
-      </div>`
-    : "";
+  const result = securityResult(atk);
   return shell(
     "security",
     crumb("Security"),
@@ -806,8 +863,8 @@ function viewSecurity() {
       <section class="card lim">
         <div class="lh"><span class="lic">${svg("key", 18)}</span><div><h2>Writer key</h2><div class="sub">Not your wallet key.</div></div></div>
         <dl class="kv">
-          <div><dt>Account</dt><dd class="mono">${state.status?.writer || "ftwriter15e434.testnet"}</dd></div>
-          <div><dt>Works only on</dt><dd class="mono">${state.status?.contract || ""}</dd></div>
+          <div><dt>Account</dt><dd class="mono" title="${esc(state.status?.writer || "ftwriter15e434.testnet")}">${esc(shortAccount(state.status?.writer || "ftwriter15e434.testnet"))}</dd></div>
+          <div><dt>Works only on</dt><dd class="mono" title="${esc(state.status?.contract || "")}">${esc(shortAccount(state.status?.contract || ""))}</dd></div>
           <div><dt>Can call</dt><dd><span class="mono tag">record_finding</span><span class="mono tag">record_custody_check</span></dd></div>
           <div><dt>Can't</dt><dd class="cant">Transfer NEAR · add or delete keys · call other contracts · attach deposits</dd></div>
         </dl>
@@ -912,7 +969,7 @@ function viewReports() {
   const v = x?.verification || {};
   const n = (k) => (x ? s[k] ?? "—" : "…");
   const rows = (x?.timeline || [])
-    .map((r) => `<tr><td class="mono ts">${r.id}</td><td>${esc(r.kind)}</td><td>${r.verdict ? verdictChip(r.verdict) : "—"}</td>
+    .map((r) => `<tr><td class="mono ts">${r.id}</td><td>${esc(r.kind)}</td><td>${r.verdict ? verdictChip(r.verdict) : kindChip(r.kind)}</td>
       <td class="mono acc">${esc(r.actor)}</td><td><a class="lnk" href="#/receipt/${r.id}">Open ${svg("arrow", 13)}</a></td></tr>`)
     .join("");
   return shell(
@@ -1055,7 +1112,7 @@ function viewSetup() {
         ? `<div class="wiz-hero">
         <p class="wiz-kicker mono">NEAR · testnet · confidential TEE</p>
         <h1>Seal the chain of custody before the first byte moves</h1>
-        <p class="lede">Connect an investigator wallet to start a case, or continue without one for a read-only walkthrough of the sample incident.</p>
+        <p class="lede">Connect an investigator wallet to start a case.</p>
       </div>`
         : ""
     }
@@ -1227,6 +1284,8 @@ function bindSetup() {
       state.setup.source = "sample";
       persistSetup();
       const sample = await (await fetch("/api/sample")).json();
+      state.sampleText = sample.text || "";
+      if (sample.salt) state.sampleSalt = sample.salt;
       const blob = new Blob([sample.text], { type: "text/plain" });
       const file = new File([blob], sample.name, { type: "text/plain" });
       await commitFile(file, "sample");
@@ -1366,11 +1425,12 @@ function bindWalk() {
 
 async function commitFile(file, source) {
   const b64 = await fileToB64(file);
+  const salt = source === "sample" ? state.sampleSalt || undefined : undefined;
   const data = await (
     await fetch("/api/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_b64: b64 }),
+      body: JSON.stringify({ file_b64: b64, salt }),
     })
   ).json();
   state.walk.evidenceName = file.name;
@@ -1449,9 +1509,11 @@ function bind() {
   if (ls) {
     ls.onclick = async () => {
       const s = await (await fetch("/api/sample")).json();
+      state.sampleText = s.text || "";
+      if (s.salt) state.sampleSalt = s.salt;
       const blob = new Blob([s.text], { type: "text/plain" });
       const file = new File([blob], s.name, { type: "text/plain" });
-      await commitFile(file);
+      await commitFile(file, "sample");
     };
   }
   const af = document.getElementById("analyze-form");
@@ -1476,8 +1538,8 @@ function bind() {
         const data = await res.json();
         clearInterval(iv);
         if (!res.ok) {
-          state.analyze = { done: true, error: data.error || data.code, skip_chain: data.skip_chain };
-          state.walk.analyzeError = data.error || data.code;
+          state.analyze = { done: true, error: writeFailMsg(data, res.status), skip_chain: data.skip_chain };
+          state.walk.analyzeError = writeFailMsg(data, res.status);
           state.walk.receiptId = null;
           persistWalk();
         } else {
@@ -1529,20 +1591,26 @@ function bind() {
       const file = drop.file.files[0];
       if (!file) return;
       const b64 = await fileToB64(file);
+      const expectedId = Number(document.querySelector('[name="expected_receipt_id"]')?.value);
+      const onchain = await getReceipt(expectedId);
+      const salt = state.walk.salt || state.sampleSalt;
       const data = await (
         await fetch("/api/commit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_b64: b64, salt: state.walk.salt }),
+          body: JSON.stringify({ file_b64: b64, salt }),
         })
       ).json();
-      const ok = data.commitment === state.walk.commitment;
+      const expected = hexOf(onchain?.evidence_commitments?.[0]);
+      const ok = String(data.commitment || "").toLowerCase() === String(expected || "").toLowerCase();
       state.custodyMsg = {
         ok,
-        text: ok ? "Match — custody intact" : "CUSTODY BREAK — fingerprint does not match",
+        text: ok ? "Match — custody intact" : "CUSTODY BREAK — fingerprint does not match on-chain receipt",
+        commitment: data.commitment,
+        expected,
+        file_b64: b64,
+        salt,
       };
-      const box = document.querySelector('#custody-form input[name="matched"]');
-      if (box) box.checked = ok;
       render();
     };
   }
@@ -1551,15 +1619,29 @@ function bind() {
     gf.onsubmit = async (e) => {
       e.preventDefault();
       const account = gf.account.value.trim();
-      const data = await (
-        await fetch("/custody/grant", {
-          method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ case_id: state.walk.caseId || "larkmoor-demo", account }),
-        })
-      ).json();
-      state.walk.grantAccount = account;
-      state.grantMsg = data.tx ? `Granted · ${data.tx}` : JSON.stringify(data);
+      const case_id = state.walk.caseId || "larkmoor-demo";
+      try {
+        if (state.wallet.connected) {
+          const sent = await signFunctionCall({
+            receiverId: state.status?.contract || "ftcust15e434.testnet",
+            methodName: "grant",
+            args: { case_id, account },
+          });
+          state.walk.grantAccount = account;
+          state.grantMsg = `Granted · ${sent?.transaction?.hash || "wallet"}`;
+        } else {
+          const res = await fetch("/custody/grant", {
+            method: "POST",
+            headers: writeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ case_id, account }),
+          });
+          const data = await res.json();
+          state.walk.grantAccount = account;
+          state.grantMsg = res.ok && data.tx ? `Granted · ${data.tx}` : writeFailMsg(data, res.status);
+        }
+      } catch (err) {
+        state.grantMsg = String(err.message);
+      }
       persistWalk();
       render();
     };
@@ -1568,17 +1650,31 @@ function bind() {
   if (of) {
     of.onsubmit = async (e) => {
       e.preventDefault();
-      const data = await (
-        await fetch("/custody/open", {
-          method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            case_id: state.walk.caseId || "larkmoor-demo",
-            evidence_id: "E1",
-            reason: of.account_note.value || "walkthrough open",
-          }),
-        })
-      ).json();
+      const args = {
+        case_id: state.walk.caseId || "larkmoor-demo",
+        evidence_id: "E1",
+        reason: of.account_note.value || "walkthrough open",
+      };
+      try {
+        if (state.wallet.connected) {
+          await signFunctionCall({
+            receiverId: state.status?.contract || "ftcust15e434.testnet",
+            methodName: "request_open",
+            args,
+            deposit: "10000000000000000000000",
+          });
+        } else {
+          const res = await fetch("/custody/open", {
+            method: "POST",
+            headers: writeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(args),
+          });
+          const data = await res.json();
+          if (!res.ok) state.grantMsg = writeFailMsg(data, res.status);
+        }
+      } catch (err) {
+        state.grantMsg = String(err.message);
+      }
       await loadStatus();
     };
   }
@@ -1588,19 +1684,38 @@ function bind() {
       const reason = hf.reason.value.trim();
       if (!reason) return;
       const decision = e.submitter?.value || "reject";
-      const data = await (
-        await fetch("/custody/hold", {
-          method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            case_id: "larkmoor-demo",
-            receipt_id: Number(hf.dataset.id),
-            decision,
-            reason,
-          }),
-        })
-      ).json();
-      state.grantMsg = `${data.kind} receipt ${data.receipt_id} · ${data.tx}`;
+      try {
+        if (state.wallet.connected) {
+          await signFunctionCall({
+            receiverId: state.status?.contract || "ftcust15e434.testnet",
+            methodName: "approve_action",
+            args: {
+              case_id: "larkmoor-demo",
+              receipt_id: Number(hf.dataset.id),
+              decision: decision === "approve",
+              reason,
+            },
+          });
+          state.grantMsg = `${decision} receipt ${hf.dataset.id} · wallet`;
+        } else {
+          const res = await fetch("/custody/hold", {
+            method: "POST",
+            headers: writeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+              case_id: "larkmoor-demo",
+              receipt_id: Number(hf.dataset.id),
+              decision,
+              reason,
+            }),
+          });
+          const data = await res.json();
+          state.grantMsg = res.ok
+            ? `${data.kind} receipt ${data.receipt_id} · ${data.tx}`
+            : writeFailMsg(data, res.status);
+        }
+      } catch (err) {
+        state.grantMsg = String(err.message);
+      }
       await loadStatus();
     };
   });
@@ -1612,31 +1727,31 @@ function bind() {
       const body = {
         case_id: "larkmoor-demo",
         expected_receipt_id: Number(fd.get("expected_receipt_id")),
-        evidence_commitment: fd.get("evidence_commitment"),
-        matched: fd.get("matched") === "on",
+        evidence_commitment: fd.get("evidence_commitment") || state.custodyMsg?.commitment,
+        matched: Boolean(state.custodyMsg?.ok),
+        salt: state.custodyMsg?.salt || state.walk.salt || state.sampleSalt,
+        file_b64: state.custodyMsg?.file_b64,
       };
-      const data = await (
-        await fetch("/custody/check", {
-          method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify(body),
-        })
-      ).json();
-      alert(data.tx ? `Recorded ${data.tx}` : JSON.stringify(data));
+      const res = await fetch("/custody/check", {
+        method: "POST",
+        headers: writeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      alert(res.ok && data.tx ? `Recorded ${data.tx}` : writeFailMsg(data, res.status));
       await loadStatus();
     };
   }
   document.querySelectorAll("[data-atk]").forEach((b) => {
     b.onclick = async () => {
       b.disabled = true;
-      const data = await (
-        await fetch("/api/security", {
-          method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ kind: b.dataset.atk }),
-        })
-      ).json();
-      state.attack = data;
+      const res = await fetch("/api/security", {
+        method: "POST",
+        headers: writeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ kind: b.dataset.atk }),
+      });
+      const data = await res.json().catch(() => ({}));
+      state.attack = { ...data, status: res.status, error: data.error || data.detail };
       render();
     };
   });
@@ -1709,3 +1824,18 @@ syncFromSelector()
   })
   .catch(() => {});
 loadStatus();
+fetch("/api/sample")
+  .then((r) => r.json())
+  .then((s) => {
+    state.sampleText = s.text || "";
+    if (s.salt) state.sampleSalt = s.salt;
+  })
+  .catch(() => {});
+fetch("/api/sample/findings")
+  .then((r) => r.json())
+  .then((d) => {
+    const map = {};
+    for (const f of d.findings || []) map[Number(f.receipt_id)] = f;
+    state.localFindings = map;
+  })
+  .catch(() => {});

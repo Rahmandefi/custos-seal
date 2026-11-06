@@ -24,7 +24,7 @@ import {
 } from "../src/near.mjs";
 import { runAttack } from "../src/attacks.mjs";
 import { evidenceCommitment, hexToBytes, newSalt } from "../src/commit.mjs";
-import { buildExport, rememberTx } from "../src/export.mjs";
+import { buildExport, rememberTx, loadTxIndex } from "../src/export.mjs";
 import { renderPdf } from "../src/render-pdf.mjs";
 
 
@@ -58,13 +58,47 @@ function invalidateStatus() {
   statusCache = { at: 0, body: null };
 }
 
-function writeGate(req) {
-  const token = process.env.CUSTOS_WRITE_TOKEN;
-  if (!token) return { ok: false, code: 403, error: "Writes disabled on the public demo" };
+const demoHits = new Map();
+function clientIp(req) {
+  const xf = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return xf || req.socket?.remoteAddress || "unknown";
+}
+function rateLimit(ip, rpm) {
+  const now = Date.now();
+  const slot = demoHits.get(ip);
+  if (!slot || now > slot.reset) {
+    demoHits.set(ip, { n: 1, reset: now + 60_000 });
+    return true;
+  }
+  if (slot.n >= rpm) return false;
+  slot.n += 1;
+  return true;
+}
+
+function writeKind(pathOnly) {
+  if (pathOnly === "/analyze") return "analyze";
+  if (pathOnly === "/api/security") return "security";
+  return "other";
+}
+
+function allowWrite(req, kind) {
+  const token = process.env.CUSTOS_WRITE_TOKEN || process.env.WRITE_TOKEN;
   const raw = String(req.headers.authorization || "");
   const got = raw.replace(/^Bearer\s+/i, "").trim();
-  if (got !== token) return { ok: false, code: 401, error: "unauthorized" };
-  return { ok: true };
+  if (token && got === token) return { ok: true, mode: "operator" };
+  const demo = process.env.DEMO_MODE === "1";
+  if (!demo) {
+    if (!token) return { ok: false, status: 403, error: "Writes disabled on the public demo" };
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+  if (kind !== "analyze" && kind !== "security") {
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+  const rpm = Number(process.env.DEMO_RPM || 6);
+  if (!rateLimit(clientIp(req), rpm)) {
+    return { ok: false, status: 429, error: "demo rate limit" };
+  }
+  return { ok: true, mode: "demo" };
 }
 
 function summarizeReceipt(r) {
@@ -124,6 +158,20 @@ function json(res, code, obj) {
   res.end(body);
 }
 
+async function sampleBytesMatch(evidenceBytes) {
+  const listing = await readFile(join(ROOT, "samples", "larkmoor-listing.txt"));
+  const hold = await readFile(join(ROOT, "samples", "larkmoor-hold.txt"));
+  return evidenceBytes.equals(listing) || evidenceBytes.equals(hold);
+}
+
+async function publishedSampleSalt() {
+  try {
+    const hex = (await readFile(join(ROOT, "samples", "larkmoor-salt.hex"), "utf8")).trim();
+    if (/^[0-9a-fA-F]{64}$/.test(hex)) return hex.toLowerCase();
+  } catch {}
+  return null;
+}
+
 async function handleAnalyze(req, forceHold) {
   const raw = await readBody(req);
   let evidenceBytes;
@@ -136,6 +184,13 @@ async function handleAnalyze(req, forceHold) {
   }
   if (!evidenceBytes.length) {
     throw new PipelineError("EMPTY", "empty evidence");
+  }
+  if (req.writeMode === "demo") {
+    if (!(await sampleBytesMatch(evidenceBytes))) {
+      const err = new Error("demo mode accepts the sample file only");
+      err.status = 403;
+      throw err;
+    }
   }
   const apiKey = process.env.NEAR_AI_API_KEY;
   if (!apiKey) throw new Error("NEAR_AI_API_KEY missing");
@@ -156,11 +211,12 @@ export async function handleRequest(req, res) {
     await mkdir(OUT, { recursive: true });
     const pathOnly = (req.url || "/").split("?")[0];
     if (req.method === "POST" && WRITE_PATHS.has(pathOnly)) {
-      const gate = writeGate(req);
+      const gate = allowWrite(req, writeKind(pathOnly));
       if (!gate.ok) {
-        json(res, gate.code, { error: gate.error });
+        json(res, gate.status, { error: gate.error });
         return;
       }
+      req.writeMode = gate.mode;
     }
     if (req.method === "POST" && req.url === "/analyze") {
       const result = await handleAnalyze(req, false);
@@ -226,19 +282,28 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "POST" && req.url === "/custody/check") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
-      const commit = hexToBytesMaybeLocal(j.evidence_commitment);
+      const expectedId = Number(j.expected_receipt_id);
+      const chain = await getReceipt(expectedId);
+      let commitBuf;
+      if (j.file_b64 && j.salt) {
+        commitBuf = evidenceCommitment(hexToBytes(j.salt), Buffer.from(j.file_b64, "base64"));
+      } else {
+        commitBuf = Buffer.from(hexToBytesMaybeLocal(j.evidence_commitment));
+      }
+      const expectedHex = Buffer.from(chain.evidence_commitments[0]).toString("hex");
+      const matched = commitBuf.toString("hex") === expectedHex;
       const sent = await callWriter(
         "record_custody_check",
         {
           case_id: j.case_id,
-          evidence_commitment: commit,
-          expected_receipt_id: Number(j.expected_receipt_id),
-          matched: Boolean(j.matched),
+          evidence_commitment: Array.from(commitBuf),
+          expected_receipt_id: expectedId,
+          matched,
         },
         { outDir: OUT }
       );
       invalidateStatus();
-      json(res, 200, { tx: sent.tx, method: "record_custody_check" });
+      json(res, 200, { tx: sent.tx, method: "record_custody_check", matched });
       return;
     }
     if (req.method === "GET" && req.url === "/health") {
@@ -251,7 +316,13 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "GET" && req.url?.startsWith("/api/receipt/")) {
       const id = Number(req.url.split("/").pop());
-      json(res, 200, await getReceipt(id));
+      const rec = await getReceipt(id);
+      if (rec && typeof rec === "object") {
+        const idx = await loadTxIndex(OUT);
+        rec.tx = idx[id] || idx[String(id)] || rec.tx || null;
+        rec.explorer = rec.tx ? `https://testnet.nearblocks.io/txns/${rec.tx}` : null;
+      }
+      json(res, 200, rec);
       return;
     }
     if (req.method === "POST" && req.url === "/api/security") {
@@ -265,12 +336,29 @@ export async function handleRequest(req, res) {
       const hold = u.searchParams.get("kind") === "hold";
       const name = hold ? "larkmoor-hold.txt" : "larkmoor-listing.txt";
       const buf = await readFile(join(ROOT, "samples", name));
+      const salt = await publishedSampleSalt();
       json(res, 200, {
         name,
         note: hold ? "FICTIONAL isolate_host HOLD sample" : "FICTIONAL MOVEit-style listing",
         fictional: true,
         text: buf.toString("utf8"),
+        salt,
       });
+      return;
+    }
+    if (req.method === "GET" && (pathOnly === "/api/sample/findings" || pathOnly.startsWith("/api/sample/findings/"))) {
+      const { readdir } = await import("node:fs/promises");
+      const dir = join(ROOT, "samples", "findings");
+      try {
+        const files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
+        const items = [];
+        for (const f of files) {
+          items.push(JSON.parse(await readFile(join(dir, f), "utf8")));
+        }
+        json(res, 200, { fictional: true, findings: items });
+      } catch {
+        json(res, 200, { fictional: true, findings: [] });
+      }
       return;
     }
     if (req.method === "GET" && req.url === "/api/export") {
@@ -309,11 +397,19 @@ export async function handleRequest(req, res) {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
       const file = Buffer.from(j.file_b64 || "", "base64");
       const envSalt = process.env.CASE_SALT || process.env.EVIDENCE_SALT;
-      const salt = j.salt
-        ? hexToBytes(j.salt)
-        : envSalt
-          ? hexToBytes(envSalt.replace(/^0x/i, ""))
-          : newSalt();
+      const published = await publishedSampleSalt();
+      const sampleOk = published && j.salt && String(j.salt).toLowerCase() === published && (await sampleBytesMatch(file));
+      if (j.salt && process.env.DEMO_MODE === "1" && !sampleOk) {
+        json(res, 403, { error: "demo mode refuses arbitrary salts" });
+        return;
+      }
+      const salt = sampleOk
+        ? hexToBytes(published)
+        : j.salt && process.env.DEMO_MODE !== "1"
+          ? hexToBytes(j.salt)
+          : envSalt
+            ? hexToBytes(envSalt.replace(/^0x/i, ""))
+            : newSalt();
       const commit = evidenceCommitment(salt, file);
       json(res, 200, {
         salt: salt.toString("hex"),
@@ -392,7 +488,7 @@ export async function handleRequest(req, res) {
     }
     json(res, 404, { error: "not found" });
   } catch (e) {
-    const code = e instanceof PipelineError ? 400 : 500;
+    const code = e.status || (e instanceof PipelineError ? 400 : 500);
     json(res, code, {
       error: e.message,
       code: e.code || "ERROR",

@@ -96,6 +96,21 @@ export async function buildExport(outDir) {
   } catch {
     /* none */
   }
+  const shipped = {};
+  try {
+    const { readdir } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join: jn } = await import("node:path");
+    const root = jn(dirname(fileURLToPath(import.meta.url)), "..");
+    const dir = jn(root, "samples", "findings");
+    for (const f of await readdir(dir)) {
+      if (!f.endsWith(".json")) continue;
+      const item = JSON.parse(await readFile(jn(dir, f), "utf8"));
+      shipped[Number(item.receipt_id)] = item;
+    }
+  } catch {
+    /* none */
+  }
 
   return {
     generated_at: new Date().toISOString(),
@@ -124,18 +139,21 @@ export async function buildExport(outDir) {
       prev_hash: r.prev_hash,
       tx: r.tx,
     })),
-    findings: findings.map((r) => ({
+    findings: findings.map((r) => {
+      const ship = shipped[r.id];
+      return {
       receipt_id: r.id,
       verdict: r.policy_verdict,
       finding_hash: r.finding?.finding_hash || null,
       citation_hashes: r.finding?.citation_hashes || [],
       model_id: r.finding?.model_id || null,
       evidence_commitments: r.evidence_commitments,
-      local_claim: localFinding?.finding?.claim || null,
-      local_citations: localFinding?.citations || null,
-      local_actions: localFinding?.finding?.recommended_actions || null,
+      local_claim: ship?.claim || localFinding?.finding?.claim || null,
+      local_citations: ship?.citations || localFinding?.citations || null,
+      local_actions: ship?.actions || localFinding?.finding?.recommended_actions || null,
       fictional: true,
-    })),
+    };
+    }),
     receipts,
     approvals,
     access_log: access,

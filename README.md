@@ -4,6 +4,73 @@ Investigator uploads sensitive evidence. A model analyzes it inside a confidenti
 
 Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). Built for NEAR HACKATHON (code since Oct 19, 2026).
 
+## Verify without an API key (screeners start here)
+
+```bash
+# Prerequisites: Node 20+ (Node 24 fine). No NEAR AI key. No wallet.
+npm ci
+npm run verify
+```
+
+This replays the FICTIONAL `larkmoor-demo` sample against the live testnet contract
+`ftcust15e434.testnet` (or the contract id in `samples/contract.json` after redeploy).
+It checks evidence commitments, citation quotes, and ed25519 finding signatures.
+It does **not** call NEAR AI Cloud and does **not** send transactions.
+
+Receipt 0 on the current contract is a filler bootstrap (repeating hashes). The script
+skips hash checks for that id. A fresh seed (no filler) is TBD before freeze.
+
+Demo writes (`DEMO_MODE=1`) rate-limit per instance in memory and reset on cold start.
+
+## Why NEAR (not just a signed log)
+
+Custos Seal is a **public, operator-independent audit trail for AI decisions on
+sensitive data**. Anyone can re-check evidence commitments, citation hashes, and
+finding signatures against the receipt contract without trusting our servers.
+A private append-only log can store the same bytes, but it cannot give a
+third-party auditor that check without trusting the operator. The chain stores
+**hashes and signatures**, not evidence plaintext. Enclave attestation is still
+verified off-chain (see Limits); the chain anchors *what was accepted and by
+which approved key* so later disputes have a single, public sequence.
+
+## Who it is for
+
+Incident-response firms, cyber insurers, and compliance auditors who already
+review AI-assisted triage and need a receipt they can re-verify. It is **not**
+a police evidence locker and not a court-certified forensic suite.
+
+## Limits (read before the pitch)
+
+- **Shared model signing key.** NEAR AI Cloud docs state that instances of the
+  same model share one signing key, so a matching `provider_tee` signer does not
+  prove which machine served the request.
+  https://docs.near.ai/cloud/verification/cloud-api/response-signatures
+- **Incomplete proof chain.** Preflight gateway/model evidence plus one response
+  signature do not yet form a complete model→gateway→final-reply chain (same page).
+- **Owner-approved keys.** The contract accepts signatures from model keys the
+  contract owner approved. On-chain verification proves that an *approved* key
+  signed the finding; re-checking the enclave report remains an off-chain step.
+- **Metadata on a public chain.** Case ids, account ids, and timestamps are
+  visible. Salting hides file contents; it does not hide that a case exists.
+  Mitigation TBD: hashed case ids in public receipts.
+- **Scale.** The demo uses a small text listing. Chunked hashing of multi-GB
+  disk images is **roadmap**, not built.
+- **Append-only.** The testnet contract account still holds a FullAccess deploy key, so the log is append-only only against the current WASM, not against a malicious redeploy. Mainnet hardening replaces this with a multisig/DAO upgrade path. The writer account still has a leftover FullAccess key `ed25519:7U5XSM…` on-chain in addition to the function-call key; delete it locally before freeze.
+
+## Stolen writer key
+
+The Security page shows the **blast radius of a leaked writer function-call
+key**: it can call `record_finding` / `record_custody_check` on one contract and
+is rejected by NEAR before transfer, cross-contract, disallowed method, or
+deposit calls execute. The app does not move funds; the demo is about limiting
+a triage key, not about stopping a chain robbery.
+
+## Sustainability (proposal — not built)
+
+Candidate model for later: a per-case or per-receipt fee paid in NEAR, plus
+paid auditor seats that can verify without holding write keys. **No token and
+no payment flow ship in this submission.**
+
 ## Problem
 
 Hosted forensic AI is a black box: you cannot prove where analysis ran, which model produced it, or that the operator could not read the evidence. Chain of custody breaks at the AI step.

@@ -8,6 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "verify": "node scripts/verify-sample.mjs",
     "verify-one": "node scripts/verify-one.mjs",
     "test:policy": "node --test src/policy.test.mjs",
     "test:pipeline": "node --test src/pipeline.test.mjs",
