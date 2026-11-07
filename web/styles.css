@@ -561,8 +561,85 @@ html,body{overflow-x:hidden;max-width:100%;width:100%}
 .tbl{overflow-x:auto}
 .status{min-width:0;overflow:hidden}
 .status .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.top{min-width:0;overflow:hidden}
+.top{min-width:0}
 .chip,.acct{max-width:100%;min-width:0}
+header.top {
+  height: auto;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  column-gap: 10px;
+  padding: 8px 16px 10px 24px;
+  overflow: visible;
+}
+header.top > .brand,
+header.top > .brand-sep {
+  order: 1;
+}
+header.top > .crumb {
+  order: 1;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+header.top > .acct,
+header.top > #top-connect {
+  order: 2;
+  flex: none;
+}
+header.top > .menuwrap {
+  order: 3;
+  flex: none;
+}
+header.top > .sp {
+  display: none;
+}
+header.top::after {
+  content: "";
+  order: 4;
+  flex: 0 0 100%;
+  height: 0;
+}
+header.top > .gsearch {
+  order: 5;
+  flex: 1 1 280px;
+  width: auto;
+  min-width: 180px;
+  max-width: 520px;
+}
+header.top > .chip {
+  order: 6;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  header.top {
+    padding: 10px 12px;
+  }
+  header.top > .brand-sep {
+    display: none;
+  }
+  header.top > .menuwrap {
+    order: 2;
+  }
+  header.top > .crumb {
+    order: 3;
+    flex: 1 1 100%;
+  }
+  header.top > .gsearch {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  header.top > .chip {
+    height: auto;
+    min-height: 30px;
+    padding: 4px 11px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.3;
+  }
+}
 @media (min-width:769px){
   .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
   .g{grid-template-columns:minmax(0,420px) minmax(0,1fr)}
