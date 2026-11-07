@@ -752,6 +752,22 @@ test("Verified panel truthfulness regression: analyze invalid JSON is outcome un
   assertUnknownOutcome(analyze);
 });
 
+test("Verified panel truthfulness regression: null analysis with saved error does not throw", () => {
+  const a = null;
+  const walkError = "saved walk error";
+  const copy = errorCopy(a) || {};
+  assert.doesNotThrow(() => {
+    void (copy.headline || copy.body || a?.error || walkError);
+  });
+  assert.throws(() => {
+    void (copy.headline || copy.body || a.error || walkError);
+  }, TypeError);
+  const text = copy.headline || copy.body || a?.error || walkError;
+  assert.equal(text, "saved walk error");
+  const view = panelView(a);
+  assert.equal(view.chip, "Verification unavailable");
+});
+
 test("Verified panel truthfulness regression: HTTP error without skip_chain does not infer contract skipped", () => {
   const analyze = fromAnalyzeHttp({
     ok: false,

@@ -757,7 +757,7 @@ function viewAnalyze() {
           a?.error || state.walk.analyzeError
             ? `<div class="ar done" style="background:var(--d);border-color:var(--g)"><span class="alab">${esc(
                 copy.chip || "Unable to verify"
-              )}</span><p>${esc(copy.headline || copy.body || a.error || state.walk.analyzeError)}</p></div>`
+              )}</span><p>${esc(copy.headline || copy.body || a?.error || state.walk.analyzeError)}</p></div>`
             : ""
         }
       </form>
