@@ -36,6 +36,7 @@ import {
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
+import { panelView, freshAnalyzeState } from "./verify-checks.js?v=__ASSET_V__";
 import {
   eventsEnabled,
   eventsContractId,
@@ -376,18 +377,11 @@ function tree(active) {
 }
 
 function lastAnalysisChip() {
-  const findings = (state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding");
-  if (!findings.length) return `<span class="chip net">No analysis yet</span>`;
-  const last = findings[findings.length - 1];
-  const v = kindLabel(last.policy_verdict);
-  if (v === "Hold") {
-    const d = decidedHolds(state.status).get(Number(last.id));
-    return d
-      ? `<span class="chip net">${svg("hold", 13)}Last analysis: Hold · ${d.decision === "Rejection" ? "rejected" : "approved"} (receipt ${d.by})</span>`
-      : `<span class="chip bad">${svg("hold", 13)}Last analysis: Hold · waiting</span>`;
-  }
-  const ok = v === "Accept";
-  return `<span class="chip ${ok ? "ok" : "bad"}">${svg(ok ? "shieldok" : "flag", 13)}Last analysis: ${v || "Recorded"}</span>`;
+  const view = panelView(state.analyze);
+  const cls =
+    view.overall === "verified" ? "ok" : view.overall === "failed" ? "bad" : "net";
+  const icon = view.overall === "verified" ? "shieldok" : view.overall === "failed" ? "shieldx" : "info";
+  return `<span class="chip ${cls}">${svg(icon, 13)}${esc(view.chip)}</span>`;
 }
 
 function searchHits() {
@@ -696,59 +690,61 @@ function viewWorkspace() {
   );
 }
 
-const STEPS = [
-  "Nonce generated",
-  "Gateway verified",
-  "Model verified",
-  "Signer and nonce bound",
-  "Software measurements match",
-  "GPU evidence verified",
-  "Prompt encrypted to the attested key",
-  "Reply signature verified",
-  "Citations checked",
-  "Recorded in the custody log",
-];
+function checkRowHtml(row) {
+  const cls =
+    row.status === "pass" ? "ok" : row.status === "fail" ? "bad" : "";
+  const mark =
+    row.status === "pass"
+      ? svg("check", 13, 2.6)
+      : row.status === "fail"
+        ? svg("x", 13, 2.6)
+        : "·";
+  const ev = row.evidence
+    ? Object.entries(row.evidence)
+        .filter(([, v]) => v != null && v !== "")
+        .map(([k, v]) => `${k} ${v}`)
+        .join(" · ")
+    : "";
+  const note =
+    row.status === "unsupported"
+      ? row.reason || "Not established in this request"
+      : row.status === "not_run"
+        ? row.reason || "Unverified"
+        : row.reason || ev;
+  const extra = row.status === "pass" && ev ? ev : "";
+  return `<div class="stp ${cls}"><span class="dot2">${mark}</span><div class="st1">${esc(row.title)}</div><div class="st2 mut">${esc([note, extra].filter(Boolean).join(" · ") || row.status)}</div></div>`;
+}
 
 function viewAnalyze() {
   const a = state.analyze;
-  const rows = STEPS.map((s, i) => {
-    let cls = "";
-    let mark = "·";
-    if (a?.running && i <= (a.tick || 0)) {
-      cls = "ok";
-      mark = svg("check", 13, 2.6);
-    }
-    if (a?.done && !a.error) {
-      cls = "ok";
-      mark = svg("check", 13, 2.6);
-    }
-    if ((a?.error || state.walk.analyzeError) && i === STEPS.length - 1) {
-      cls = "bad";
-      mark = svg("x", 13, 2.6);
-    }
-    return `<div class="stp ${cls}"><span class="dot2">${mark}</span><div class="st1">${s}</div></div>`;
-  }).join("");
+  const view = panelView(a);
+  const rows = view.rows.map(checkRowHtml).join("");
+  const overallOk = view.overall === "verified";
   const result = a?.done
-    ? a.error
+    ? a.error || view.overall === "failed"
       ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
           <div class="alab">Unable to verify</div>
-          <h2>${a.error}</h2>
-          <p class="lede">No receipt was written (fail closed). ${a.skip_chain ? "The contract was not called." : ""}</p>
+          <h2>${esc(a.error || view.chip)}</h2>
+          <p class="lede">No verified finding was recorded (fail closed). ${a.skip_chain ? "The contract was not called." : ""}</p>
         </div>`
-      : `<div class="card" style="padding:16px 20px;border-color:var(--m);background:var(--p)">
+      : overallOk
+      ? `<div class="card" style="padding:16px 20px;border-color:var(--m);background:var(--p)">
           <div class="alab" style="color:var(--bh)">Verified</div>
-          <h2>Receipt ${a.receipt_id} recorded</h2>
-          <p class="lede">Policy ${a.policy}. Storage +${a.storage_delta} bytes.</p>
+          <h2>Receipt ${esc(String(a.receipt_id))} recorded</h2>
+          <p class="lede">Policy ${esc(String(a.policy || "-"))}. Storage +${esc(String(a.storage_delta ?? "-"))} bytes.</p>
           <p><a class="lnk" href="#/receipt/${a.receipt_id}">Open receipt</a>
-          ${a.tx ? `· <a class="lnk" href="${explorerTx(a.tx)}" target="_blank" rel="noreferrer">view transaction</a>` : ""}</p>
-          <p class="mono mut">salt ${a.salt}</p>
+          ${a.tx ? ` · <a class="lnk" href="${explorerTx(a.tx)}" target="_blank" rel="noreferrer">view transaction</a>` : ""}</p>
+        </div>`
+      : `<div class="card" style="padding:16px 20px">
+          <div class="alab">${esc(view.chip)}</div>
+          <p class="lede">Checks that did not run stay unverified. Approval state is on Approvals, not this chip.</p>
         </div>`
     : "";
   return shell(
     "analyze",
     crumb("Analysis"),
     null,
-    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">One request: upload, TEE, provider_tee, dcap-qvl, policy, then record_finding.</p></div></div>
+    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), a 32-byte report nonce, provider_tee, and citations, then records a finding only after receipt_count increases. Independent DCAP is labeled when it actually ran. RTMR3, MRCONFIGID, NRAS, and encryption are not established here.</p></div></div>
     <div class="card" style="padding:18px 20px">
       <form id="analyze-form">
         <label class="dl" for="ev">Evidence file</label>
@@ -1769,13 +1765,8 @@ function bind() {
       e.preventDefault();
       const file = af.file.files[0];
       if (!file) return;
-      state.analyze = { running: true, tick: 0 };
+      state.analyze = freshAnalyzeState();
       render();
-      const iv = setInterval(() => {
-        if (!state.analyze?.running) return;
-        state.analyze.tick = Math.min(STEPS.length - 2, (state.analyze.tick || 0) + 1);
-        render();
-      }, 700);
       try {
         const res = await fetch("/analyze", {
           method: "POST",
@@ -1783,9 +1774,13 @@ function bind() {
           body: await file.arrayBuffer(),
         });
         const data = await res.json();
-        clearInterval(iv);
         if (!res.ok) {
-          state.analyze = { done: true, error: writeFailMsg(data, res.status), skip_chain: data.skip_chain };
+          state.analyze = {
+            done: true,
+            error: writeFailMsg(data, res.status),
+            skip_chain: data.skip_chain,
+            checks: data.checks || state.analyze.checks,
+          };
           state.walk.analyzeError = writeFailMsg(data, res.status);
           state.walk.receiptId = null;
           persistWalk();
@@ -1800,8 +1795,11 @@ function bind() {
           return;
         }
       } catch (err) {
-        clearInterval(iv);
-        state.analyze = { done: true, error: String(err.message) };
+        state.analyze = {
+          done: true,
+          error: String(err.message),
+          checks: state.analyze?.checks,
+        };
       }
       render();
     };

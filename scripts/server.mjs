@@ -236,6 +236,7 @@ export async function handleRequest(req, res) {
         policy: result.policy.verdict,
         reasons: result.policy.reasons,
         actions: result.receipt?.finding?.recommended_actions || [],
+        checks: result.checks,
       });
       return;
     }
@@ -513,6 +514,7 @@ export async function handleRequest(req, res) {
       error: e.message,
       code: e.code || "ERROR",
       skip_chain: Boolean(e.skipChain),
+      checks: e.checks || null,
     });
   }
 }

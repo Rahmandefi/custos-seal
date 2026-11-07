@@ -12,6 +12,7 @@
     "verify-one": "node scripts/verify-one.mjs",
     "test:policy": "node --test src/policy.test.mjs",
     "test:pipeline": "node --test src/pipeline.test.mjs",
+    "test:verified-panel": "node --test src/verified-panel.test.mjs",
     "analyze": "node scripts/analyze.mjs",
     "verify-from-chain": "node scripts/verify-from-chain.mjs",
     "server": "node scripts/server.mjs",

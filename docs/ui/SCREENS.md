@@ -35,20 +35,19 @@ Above the columns: a case summary strip with counts (findings, flagged, held, de
 
 ## Screen 4: Verified panel (shown when Analyze runs)
 
-A checklist that ticks through live, in plain words:
+A checklist driven by this analysis request, not a timer. Rows the backend actually runs:
 
-- Nonce generated
-- Gateway verified
-- Model verified
-- Signer and nonce bound
-- Software measurements match
-- GPU evidence verified
-- Prompt encrypted to the attested key
-- Reply signature verified
-- Citations checked
-- Recorded in the custody log
+- Gateway TCB (SDK `tcbStatus`, UpToDate only)
+- Model TCB (same)
+- Nonce from attested reports (32-byte hex; reject reuse; not quote REPORTDATA)
+- Reply signature kind (`provider_tee` from `verifyResponse`)
+- Citations (quote bytes in the uploaded evidence)
+- Independent DCAP via `verify_report.py` when that script ran; otherwise unsupported
+- Recorded in the custody log only after `record_finding` and `receipt_count` increment
 
-Top line shows one overall result: Verified, Verified with flags, or Unable to verify. Each row has an expand arrow for the technical detail (quote status, report hashes). On failure, the failing row turns red with a plain-language reason, and the panel says clearly that no receipt was written (fail closed).
+RTMR3, MRCONFIGID, NVIDIA NRAS, and prompt-encryption validation are shown as not established in this request.
+
+Top chip is the verification state (Verified, Unable to verify, incomplete, or unavailable). Approval/HOLD decisions stay on Approvals. On failure the failing row is red, later rows stay unverified, and no verified finding is recorded.
 
 ## Screen 5: Finding detail
 

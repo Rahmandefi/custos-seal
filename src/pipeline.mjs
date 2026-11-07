@@ -31,12 +31,19 @@ import {
   viewAccount,
   viewFunction,
 } from "./near.mjs";
+import {
+  emptyChecks,
+  setCheck,
+  attestationNonceHex,
+  canRecord,
+} from "../web/verify-checks.js";
 
 export class PipelineError extends Error {
-  constructor(code, message) {
+  constructor(code, message, checks = null) {
     super(message);
     this.code = code;
     this.skipChain = true;
+    this.checks = checks;
   }
 }
 
@@ -268,6 +275,10 @@ export async function analyzeEvidence({
   salt,
   allowanceFn = writerAllowance,
   forceVerdict,
+  recordFindingFn,
+  receiptCountFn = receiptCount,
+  viewAccountFn = viewAccount,
+  dcapFn,
 }) {
   const text = evidenceText ?? Buffer.from(evidenceBytes).toString("utf8");
   const bytes = evidenceBytes ?? Buffer.from(text, "utf8");
@@ -282,44 +293,102 @@ export async function analyzeEvidence({
     : await defaultTee({ evidenceText: text, apiKey });
 
   const { attested, completion, verified, sig } = teeResult;
+  const checks = emptyChecks();
 
-  const gwTcb = attested.gateway?.tcbStatus || attested.gateway?.tcb_status;
+  const gwTcb = attested.gateway?.tcbStatus || attested.gateway?.tcb_status || null;
   const modelTcb =
-    attested.models?.[0]?.tcbStatus || attested.models?.[0]?.tcb_status;
-  if (gwTcb && gwTcb !== "UpToDate") {
-    throw new PipelineError("TCB_NOT_UP_TO_DATE", `gateway tcb=${gwTcb}`);
+    attested.models?.[0]?.tcbStatus || attested.models?.[0]?.tcb_status || null;
+
+  if (!gwTcb) {
+    setCheck(checks, "gateway_tcb", "fail", { reason: "gateway tcbStatus missing" });
+  } else if (gwTcb !== "UpToDate") {
+    setCheck(checks, "gateway_tcb", "fail", {
+      reason: `gateway tcb=${gwTcb}`,
+      evidence: { tcb_status: gwTcb },
+    });
+  } else {
+    setCheck(checks, "gateway_tcb", "pass", { evidence: { tcb_status: gwTcb } });
   }
-  if (modelTcb && modelTcb !== "UpToDate") {
-    throw new PipelineError("TCB_NOT_UP_TO_DATE", `model tcb=${modelTcb}`);
+  if (!modelTcb) {
+    setCheck(checks, "model_tcb", "fail", { reason: "model tcbStatus missing" });
+  } else if (modelTcb !== "UpToDate") {
+    setCheck(checks, "model_tcb", "fail", {
+      reason: `model tcb=${modelTcb}`,
+      evidence: { tcb_status: modelTcb },
+    });
+  } else {
+    setCheck(checks, "model_tcb", "pass", { evidence: { tcb_status: modelTcb } });
   }
   if (attested.tcbOk === false) {
-    throw new PipelineError("TCB_NOT_UP_TO_DATE", "tcbOk=false");
+    if (checks.gateway_tcb.status === "pass") {
+      setCheck(checks, "gateway_tcb", "fail", {
+        reason: "tcbOk=false",
+        evidence: { tcb_status: gwTcb },
+      });
+    }
+    if (checks.model_tcb.status === "pass") {
+      setCheck(checks, "model_tcb", "fail", {
+        reason: "tcbOk=false",
+        evidence: { tcb_status: modelTcb },
+      });
+    }
+  }
+  if (checks.gateway_tcb.status === "fail" || checks.model_tcb.status === "fail") {
+    const reason =
+      checks.gateway_tcb.status === "fail"
+        ? checks.gateway_tcb.reason
+        : checks.model_tcb.reason;
+    throw new PipelineError("TCB_NOT_UP_TO_DATE", reason, checks);
   }
 
-  if (verified?.signatureKind !== "provider_tee") {
-    throw new PipelineError(
-      "NOT_PROVIDER_TEE",
-      `signatureKind=${verified?.signatureKind}`
-    );
-  }
-
-  const gwReport = rawReport(attested.gateway);
-  const modelReport = rawReport(attested.models?.[0]);
-  const gwText = JSON.stringify(gwReport, null, 2);
-  const modelText = JSON.stringify(modelReport, null, 2);
-  const gatewayHash = sha256Hex(Buffer.from(gwText));
-  const modelHash = sha256Hex(Buffer.from(modelText));
   const modelNonce = extractNonce(attested.models?.[0]);
   const gatewayNonce = extractNonce(attested.gateway);
-  const nonceBytes = nonceToBytes(modelNonce || gatewayNonce);
-  const nonceHex = bytesToHex(nonceBytes);
-
   await mkdir(outDir, { recursive: true });
   const seenPath = join(outDir, "seen-nonces.json");
   const seen = await loadSeen(seenPath);
-  if (seen.includes(nonceHex)) {
-    throw new PipelineError("NONCE_REUSED", `nonce ${nonceHex} already used`);
+  const nonceHex = attestationNonceHex(modelNonce) || attestationNonceHex(gatewayNonce);
+  if (!nonceHex) {
+    setCheck(checks, "nonce", "fail", {
+      reason: "attested reports did not include a 32-byte nonce",
+    });
+    throw new PipelineError("NONCE_INVALID", "missing or invalid nonce", checks);
   }
+  if (seen.includes(nonceHex)) {
+    setCheck(checks, "nonce", "fail", {
+      reason: "nonce already used",
+      evidence: { nonce: nonceHex.slice(0, 8) + "…" + nonceHex.slice(-8) },
+    });
+    throw new PipelineError("NONCE_REUSED", `nonce ${nonceHex} already used`, checks);
+  }
+  setCheck(checks, "nonce", "pass", {
+    evidence: { nonce: nonceHex.slice(0, 8) + "…" + nonceHex.slice(-8) },
+  });
+  const nonceBytes = nonceToBytes(nonceHex);
+
+  if (verified?.signatureKind !== "provider_tee") {
+    setCheck(checks, "signature", "fail", {
+      reason: `signatureKind=${verified?.signatureKind || "missing"}`,
+      evidence: { signature_kind: verified?.signatureKind || null },
+    });
+    throw new PipelineError(
+      "NOT_PROVIDER_TEE",
+      `signatureKind=${verified?.signatureKind}`,
+      checks
+    );
+  }
+  const signerRaw = sig?.signer ?? sig?.signingAddress ?? sig?.signing_address;
+  const signerStr =
+    typeof signerRaw === "string"
+      ? signerRaw.replace(/^0x/, "")
+      : signerRaw?.signingAddress || signerRaw?.publicKey || "";
+  setCheck(checks, "signature", "pass", {
+    evidence: {
+      signature_kind: verified.signatureKind,
+      signer: signerStr
+        ? String(signerStr).slice(0, 8) + "…" + String(signerStr).slice(-8)
+        : null,
+    },
+  });
 
   const parsed = parseModelJson(completionText(completion));
   const policy = evaluate(
@@ -330,16 +399,35 @@ export async function analyzeEvidence({
 
   const p2 = (policy.reasons || []).some((r) => String(r).startsWith("P2"));
   if (policy.verdict === "BLOCK" && (p2 || !policy.citationRecords?.length)) {
+    setCheck(checks, "citations", "fail", {
+      reason: policy.reasons?.join("; ") || "citation check failed",
+      evidence: { citation_count: policy.citationRecords?.length || 0 },
+    });
     throw new PipelineError(
       "CITATION_MISMATCH",
-      policy.reasons?.join("; ") || "citation check failed"
+      policy.reasons?.join("; ") || "citation check failed",
+      checks
     );
   }
 
   const findingBody = parsed?.findings?.[0];
   if (!findingBody) {
-    throw new PipelineError("CITATION_MISMATCH", "no findings");
+    setCheck(checks, "citations", "fail", {
+      reason: "no findings",
+      evidence: { citation_count: 0 },
+    });
+    throw new PipelineError("CITATION_MISMATCH", "no findings", checks);
   }
+  setCheck(checks, "citations", "pass", {
+    evidence: { citation_count: (policy.citationRecords || []).length },
+  });
+
+  const gwReport = rawReport(attested.gateway);
+  const modelReport = rawReport(attested.models?.[0]);
+  const gwText = JSON.stringify(gwReport, null, 2);
+  const modelText = JSON.stringify(modelReport, null, 2);
+  const gatewayHash = sha256Hex(Buffer.from(gwText));
+  const modelHash = sha256Hex(Buffer.from(modelText));
 
   const commitHex = bytesToHex(commitment);
   const citRecords = (policy.citationRecords || []).map((c) =>
@@ -352,17 +440,31 @@ export async function analyzeEvidence({
   await writeFile(join(outDir, "model-report.json"), modelText);
 
   if (runDcap) {
-    await runDcapQvl(outDir);
+    try {
+      const dcapOut = dcapFn ? await dcapFn(outDir) : await runDcapQvl(outDir);
+      setCheck(checks, "independent_dcap", "pass", {
+        evidence: { tool: "verify_report.py" },
+        reason: "Independent dcap-qvl on dumped quotes. Not RTMR3, MRCONFIGID, or NRAS.",
+      });
+      void dcapOut;
+    } catch (e) {
+      setCheck(checks, "independent_dcap", "fail", {
+        reason: e.message || "verify_report.py failed",
+      });
+      throw e instanceof PipelineError
+        ? new PipelineError(e.code, e.message, checks)
+        : new PipelineError("DCAP_QVL_FAILED", String(e.message || e), checks);
+    }
+  } else {
+    setCheck(checks, "independent_dcap", "unsupported", {
+      reason: "verify_report.py not run in this request",
+    });
   }
 
   const signedText = sig.signedText ?? sig.text ?? "";
   const signature =
     typeof sig.signature === "string" ? sig.signature : String(sig.signature ?? "");
-  const signerRaw = sig.signer ?? sig.signingAddress ?? sig.signing_address;
-  const signer =
-    typeof signerRaw === "string"
-      ? signerRaw.replace(/^0x/, "")
-      : signerRaw?.signingAddress || signerRaw?.publicKey;
+  const signer = signerStr;
   const [modelId, reqHex, respHex] = signedText.split(":");
 
   const allowance = await allowanceFn();
@@ -370,7 +472,7 @@ export async function analyzeEvidence({
     allowance.allowance === "0" ||
     (typeof allowance.allowance === "string" && BigInt(allowance.allowance) === 0n)
   ) {
-    throw new PipelineError("ALLOWANCE_EXHAUSTED", "writer gas allowance is 0");
+    throw new PipelineError("ALLOWANCE_EXHAUSTED", "writer gas allowance is 0", checks);
   }
 
   const receipt = {
@@ -440,17 +542,50 @@ export async function analyzeEvidence({
   let storageBefore = null;
   let storageAfter = null;
   if (writeOnChain) {
-    storageBefore = (await viewAccount(CONTRACT)).storage_usage;
-    const countBefore = await receiptCount();
-    const sent = await callWriter("record_finding", recordArgs, { outDir });
-    tx = sent.tx;
-    const countAfter = await receiptCount();
-    receiptId = countAfter - 1;
-    storageAfter = (await viewAccount(CONTRACT)).storage_usage;
-    if (countAfter !== countBefore + 1) {
-      throw new Error(`expected receipt_count ${countBefore + 1}, got ${countAfter}`);
+    if (!canRecord(checks)) {
+      setCheck(checks, "recording", "not_run", { reason: "prior check did not pass" });
+      throw new PipelineError("RECORDING_BLOCKED", "fail closed: not recording", checks);
     }
-    await rememberTx(outDir, receiptId, tx);
+    try {
+      storageBefore = (await viewAccountFn(CONTRACT)).storage_usage;
+      const countBefore = await receiptCountFn();
+      const writer = recordFindingFn || ((args, opts) => callWriter("record_finding", args, opts));
+      const sent = await writer(recordArgs, { outDir });
+      tx = sent?.tx ?? sent?.transaction?.hash ?? null;
+      const countAfter = await receiptCountFn();
+      storageAfter = (await viewAccountFn(CONTRACT)).storage_usage;
+      if (countAfter !== countBefore + 1) {
+        setCheck(checks, "recording", "fail", {
+          reason: `receipt_count did not increase (before ${countBefore}, after ${countAfter}). Transaction hash is not success.`,
+          evidence: { tx: tx || null, receipt_count_before: countBefore, receipt_count_after: countAfter },
+        });
+        throw new PipelineError(
+          "RECORDING_FAILED",
+          `expected receipt_count ${countBefore + 1}, got ${countAfter}`,
+          checks
+        );
+      }
+      receiptId = countAfter - 1;
+      setCheck(checks, "recording", "pass", {
+        evidence: {
+          receipt_id: receiptId,
+          tx: tx || null,
+          tcb_status: gwTcb,
+        },
+      });
+      if (tx) await rememberTx(outDir, receiptId, tx);
+    } catch (e) {
+      if (e instanceof PipelineError) throw e;
+      setCheck(checks, "recording", "fail", {
+        reason: e.message || "record_finding failed",
+        evidence: { tx: tx || null },
+      });
+      throw new PipelineError("RECORDING_FAILED", String(e.message || e), checks);
+    }
+  } else {
+    setCheck(checks, "recording", "not_run", {
+      reason: "chain write not executed for this run",
+    });
   }
 
   seen.push(nonceHex);
@@ -466,6 +601,7 @@ export async function analyzeEvidence({
     storageDelta: storageAfter != null ? storageAfter - storageBefore : null,
     salt: bytesToHex(caseSalt),
     policy,
+    checks,
   };
 }
 
