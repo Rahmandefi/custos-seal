@@ -6,12 +6,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { analyzeEvidence, PipelineError } from "./pipeline.mjs";
+import { analyzeEvidence, PipelineError, classifySdkError } from "./pipeline.mjs";
 import {
   emptyChecks,
   panelView,
   overallVerification,
   freshAnalyzeState,
+  txExecutionState,
 } from "../web/verify-checks.js";
 
 const evidenceText =
@@ -37,10 +38,10 @@ function goodFinding() {
 function teeStub(overrides = {}) {
   const finding = overrides.finding ?? goodFinding();
   const nonce = overrides.nonce === undefined ? "bb".repeat(32) : overrides.nonce;
-  const requestNonce =
-    overrides.requestNonce === undefined ? nonce : overrides.requestNonce;
   return async () => ({
-    requestNonce,
+    ...(Object.prototype.hasOwnProperty.call(overrides, "requestNonce")
+      ? { requestNonce: overrides.requestNonce }
+      : {}),
     attested: {
       tcbOk: overrides.tcbOk ?? true,
       gateway: {
@@ -78,7 +79,11 @@ function chainFns({ txStatus, getReceipt, receiptCount = 8 } = {}) {
       return { tx: "ok-tx", receipt_id: 7 };
     },
     txStatusFn: async () =>
-      txStatus ?? { status: { SuccessValue: "" }, finality: "final", receipt_id: 7 },
+      txStatus ?? {
+        status: { SuccessValue: "" },
+        final_execution_status: "FINAL",
+        receipt_id: 7,
+      },
     getReceiptFn: async (id) => {
       if (getReceipt) return getReceipt(id, stored);
       return {
@@ -123,7 +128,8 @@ test("Verified panel truthfulness regression: valid evidence only executed check
     assert.equal(c.model_tcb.status, "pass");
     assert.equal(c.nonce.status, "pass");
     assert.equal(c.nonce.evidence.kind, "format");
-    assert.equal(c.nonce_binding.status, "pass");
+    assert.equal(c.nonce_binding.status, "unsupported");
+    assert.notEqual(c.nonce_binding.status, "pass");
     assert.equal(c.signature.status, "pass");
     assert.equal(c.signature.evidence.signature_kind, "provider_tee");
     assert.equal(c.citations.status, "pass");
@@ -140,7 +146,7 @@ test("Verified panel truthfulness regression: valid evidence only executed check
       view.rows.every(
         (r) =>
           r.status !== "pass" ||
-          ["gateway_tcb", "model_tcb", "nonce", "nonce_binding", "signature", "citations"].includes(r.id)
+          ["gateway_tcb", "model_tcb", "nonce", "signature", "citations"].includes(r.id)
       )
     );
   });
@@ -308,7 +314,7 @@ test("Verified panel truthfulness regression: failed transaction does not pass R
       outDir,
       tee: teeStub(),
       ...chainFns({
-        txStatus: { status: { Failure: { error: "boom" } }, finality: "final" },
+        txStatus: { status: { Failure: { error_message: "boom" } }, final_execution_status: "FINAL" },
       }),
     }).then(
       () => null,
@@ -327,7 +333,7 @@ test("Verified panel truthfulness regression: pending transaction remains unconf
       outDir,
       tee: teeStub(),
       ...chainFns({
-        txStatus: { status: { SuccessValue: "" }, finality: "optimistic" },
+        txStatus: { status: { SuccessValue: "" }, final_execution_status: "EXECUTED_OPTIMISTIC" },
       }),
     }).then(
       () => null,
@@ -346,7 +352,7 @@ test("Verified panel truthfulness regression: unrelated receipt increasing count
       outDir,
       tee: teeStub(),
       ...chainFns({
-        txStatus: { status: { SuccessValue: "" }, finality: "final" },
+        txStatus: { status: { SuccessValue: "" }, final_execution_status: "FINAL" },
         receiptCount: 12,
         getReceipt: () => ({
           id: 11,
@@ -445,6 +451,177 @@ test("Verified panel truthfulness regression: confirmed recording is required fo
     });
     assert.equal(result.checks.recording.status, "pass");
     assert.equal(result.checks.recording.evidence.receipt_id, 7);
-    assert.equal(overallVerification(result.checks), "verified");
+    assert.equal(result.checks.nonce_binding.status, "unsupported");
+    assert.equal(result.checks.independent_dcap.status, "unsupported");
+    assert.equal(overallVerification(result.checks), "incomplete");
+    const view = panelView({ done: true, checks: result.checks });
+    assert.match(view.chip, /Verification incomplete/);
+    assert.ok(!/^Verified$/.test(view.chip));
   });
 });
+
+function sdkErr(code, details = {}) {
+  const e = new Error(code);
+  e.failure = { code, details };
+  return e;
+}
+
+function goodAttested() {
+  return {
+    tcbOk: true,
+    gateway: { tcbStatus: "UpToDate", report: { nonce: "bb".repeat(32) } },
+    models: [{ tcbStatus: "UpToDate", report: { nonce: "bb".repeat(32) } }],
+  };
+}
+
+function goodCompletion() {
+  return {
+    id: "c1",
+    choices: [{ message: { content: JSON.stringify({ findings: [goodFinding()] }) } }],
+  };
+}
+
+test("Verified panel truthfulness regression: NEAR RPC FINAL success, failure, non-final, missing status", () => {
+  assert.equal(
+    txExecutionState({
+      status: { SuccessValue: "" },
+      final_execution_status: "FINAL",
+    }),
+    "final_success"
+  );
+  assert.equal(
+    txExecutionState({
+      status: { Failure: { error_message: "x" } },
+      final_execution_status: "FINAL",
+    }),
+    "failure"
+  );
+  assert.equal(
+    txExecutionState({
+      status: { SuccessValue: "" },
+      final_execution_status: "EXECUTED_OPTIMISTIC",
+    }),
+    "pending"
+  );
+  assert.equal(txExecutionState({ final_execution_status: "FINAL" }), "unknown");
+  assert.equal(txExecutionState({ status: "success", final: true, state: "final_success" }), "unknown");
+});
+
+test("Verified panel truthfulness regression: client.verify nonce mismatch maps to binding row", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...local,
+      sdk: {
+        verify: async () => {
+          throw sdkErr("binding.nonce_mismatch", { source: "attestation.nonce" });
+        },
+      },
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "NONCE_BINDING");
+    assert.equal(err.checks.nonce_binding.status, "fail");
+    assert.equal(err.checks.nonce_binding.evidence.stage, "verify");
+    assert.equal(err.checks.nonce_binding.evidence.code, "binding.nonce_mismatch");
+    assert.equal(err.checks.signature.status, "not_run");
+    assert.equal(err.checks.citations.status, "not_run");
+    assert.equal(err.checks.recording.status, "not_run");
+  });
+});
+
+test("Verified panel truthfulness regression: client.verifyResponse signature.kind_mismatch maps to signature row", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...local,
+      sdk: {
+        verify: async () => goodAttested(),
+        createCompletion: async () => goodCompletion(),
+        verifyResponse: async () => {
+          throw sdkErr("signature.kind_mismatch", { expected: "provider_tee", actual: "gateway" });
+        },
+        fetchSignature: async () => null,
+      },
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "NOT_PROVIDER_TEE");
+    assert.equal(err.checks.gateway_tcb.status, "pass");
+    assert.equal(err.checks.model_tcb.status, "pass");
+    assert.equal(err.checks.signature.status, "fail");
+    assert.equal(err.checks.signature.evidence.stage, "verifyResponse");
+    assert.equal(err.checks.citations.status, "not_run");
+    assert.equal(err.checks.recording.status, "not_run");
+  });
+});
+
+test("Verified panel truthfulness regression: identifiable gateway TCB SDK error", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...local,
+      sdk: {
+        verify: async () => {
+          throw sdkErr("policy.tcb_status_not_allowed", { actual: "OutOfDate", resource: "gateway" });
+        },
+      },
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.checks.gateway_tcb.status, "fail");
+    assert.equal(err.checks.model_tcb.status, "not_run");
+    assert.equal(err.checks.nonce.status, "not_run");
+  });
+});
+
+test("Verified panel truthfulness regression: ambiguous SDK error does not guess a row", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...local,
+      sdk: {
+        verify: async () => {
+          throw sdkErr("api.transport_failed", { resource: "model_attestation", reason: "request" });
+        },
+      },
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "SDK_ERROR");
+    assert.equal(
+      classifySdkError(sdkErr("api.transport_failed", { resource: "model_attestation" }), "verify").row,
+      null
+    );
+    assert.equal(err.checks.gateway_tcb.status, "not_run");
+    assert.equal(err.checks.nonce_binding.status, "not_run");
+    assert.equal(err.checks.signature.status, "not_run");
+  });
+});
+
+test("Verified panel truthfulness regression: missing status never passes Recording", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      tee: teeStub(),
+      ...chainFns({
+        txStatus: { final_execution_status: "FINAL" },
+      }),
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "RECORDING_UNCONFIRMED");
+    assert.notEqual(err.checks.recording.status, "pass");
+  });
+});
+

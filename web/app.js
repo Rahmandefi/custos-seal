@@ -744,7 +744,7 @@ function viewAnalyze() {
     "analyze",
     crumb("Analysis"),
     null,
-    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), a 32-byte report nonce, provider_tee, and citations, then records a finding only after receipt_count increases. Independent DCAP is labeled when it actually ran. RTMR3, MRCONFIGID, NRAS, and encryption are not established here.</p></div></div>
+    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. Independent DCAP, RTMR3, MRCONFIGID, NRAS, and encryption stay labelled when they are not established here.</p></div></div>
     <div class="card" style="padding:18px 20px">
       <form id="analyze-form">
         <label class="dl" for="ev">Evidence file</label>

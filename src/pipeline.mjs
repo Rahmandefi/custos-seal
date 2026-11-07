@@ -181,16 +181,103 @@ const SCHEMA = {
   },
 };
 
-async function defaultTee({ evidenceText, apiKey }) {
-  const client = new InferenceClient({
-    apiKey,
-    signingAlgo: "ed25519",
-    e2ee: true,
-    attestationCacheTimeToLiveMs: 0,
-    gatewayVerification: { policy: tcbPolicy },
-    modelVerification: { policy: tcbPolicy },
-  });
-  const attested = await withNbfRetry("verify()", () => client.verify(MODEL));
+export function classifySdkError(err, stage) {
+  const sdk = typeof getSdkError === "function" ? getSdkError(err) : null;
+  const code = sdk?.failure?.code || err?.failure?.code || null;
+  const details = sdk?.failure?.details || err?.failure?.details || {};
+  const safe = { stage, code: code || "unknown" };
+  if (code === "binding.nonce_mismatch" || code === "api.nonce_mismatch") {
+    return { ...safe, row: "nonce_binding", pipelineCode: "NONCE_BINDING" };
+  }
+  if (code === "signature.kind_mismatch") {
+    return { ...safe, row: "signature", pipelineCode: "NOT_PROVIDER_TEE" };
+  }
+  if (code === "policy.tcb_status_not_allowed") {
+    const path = String(details.path || details.resource || details.source || "");
+    if (/model/i.test(path)) {
+      return { ...safe, row: "model_tcb", pipelineCode: "TCB_NOT_UP_TO_DATE" };
+    }
+    if (/gateway/i.test(path)) {
+      return { ...safe, row: "gateway_tcb", pipelineCode: "TCB_NOT_UP_TO_DATE" };
+    }
+    return { ...safe, row: null, pipelineCode: "TCB_NOT_UP_TO_DATE" };
+  }
+  return { ...safe, row: null, pipelineCode: "SDK_ERROR" };
+}
+
+function tagSdk(err, stage, extra = {}) {
+  err.sdkStage = stage;
+  Object.assign(err, extra);
+  return err;
+}
+
+function normalizeSigner(raw) {
+  if (!raw) return "";
+  if (typeof raw === "string") return raw.replace(/^0x/i, "").toLowerCase();
+  const s = raw.signingAddress || raw.publicKey || "";
+  return String(s).replace(/^0x/i, "").toLowerCase();
+}
+
+function applyTcbChecks(checks, attested) {
+  const gwTcb = attested?.gateway?.tcbStatus || attested?.gateway?.tcb_status || null;
+  const modelTcb =
+    attested?.models?.[0]?.tcbStatus || attested?.models?.[0]?.tcb_status || null;
+  if (!gwTcb) {
+    setCheck(checks, "gateway_tcb", "fail", { reason: "gateway tcbStatus missing" });
+  } else if (gwTcb !== "UpToDate") {
+    setCheck(checks, "gateway_tcb", "fail", {
+      reason: `gateway tcb=${gwTcb}`,
+      evidence: { tcb_status: gwTcb },
+    });
+  } else {
+    setCheck(checks, "gateway_tcb", "pass", { evidence: { tcb_status: gwTcb } });
+  }
+  if (!modelTcb) {
+    setCheck(checks, "model_tcb", "fail", { reason: "model tcbStatus missing" });
+  } else if (modelTcb !== "UpToDate") {
+    setCheck(checks, "model_tcb", "fail", {
+      reason: `model tcb=${modelTcb}`,
+      evidence: { tcb_status: modelTcb },
+    });
+  } else {
+    setCheck(checks, "model_tcb", "pass", { evidence: { tcb_status: modelTcb } });
+  }
+  if (attested?.tcbOk === false) {
+    if (checks.gateway_tcb.status === "pass") {
+      setCheck(checks, "gateway_tcb", "fail", {
+        reason: "tcbOk=false",
+        evidence: { tcb_status: gwTcb },
+      });
+    }
+    if (checks.model_tcb.status === "pass") {
+      setCheck(checks, "model_tcb", "fail", {
+        reason: "tcbOk=false",
+        evidence: { tcb_status: modelTcb },
+      });
+    }
+  }
+  return { gwTcb, modelTcb };
+}
+
+async function defaultTee({ evidenceText, apiKey, sdk = {} }) {
+  const client =
+    sdk.client ||
+    new InferenceClient({
+      apiKey,
+      signingAlgo: "ed25519",
+      e2ee: true,
+      attestationCacheTimeToLiveMs: 0,
+      gatewayVerification: { policy: tcbPolicy },
+      modelVerification: { policy: tcbPolicy },
+    });
+  let attested;
+  try {
+    attested = await withNbfRetry("verify()", () =>
+      sdk.verify ? sdk.verify({ client, model: MODEL }) : client.verify(MODEL)
+    );
+  } catch (e) {
+    throw tagSdk(e, "verify");
+  }
   const numbered = numberLines(evidenceText, "E1");
   const messages = [
     {
@@ -203,19 +290,42 @@ async function defaultTee({ evidenceText, apiKey }) {
       content: `Evidence file E1 (line-numbered):\n${numbered}\n\nCite the exact line text. If the evidence recommends isolate_host, put isolate_host in recommended_actions.`,
     },
   ];
-  const completion = await withNbfRetry("structured create", () =>
-    client.chat.completions.create(
-      { model: MODEL, messages, stream: false, response_format: SCHEMA },
-      { signal: AbortSignal.timeout(120_000) }
-    )
-  );
-  const verified = await client.verifyResponse(completion.id);
-  const attClient = new AttestationClient({ apiKey });
-  const sig = await attClient.fetchCompletionSignature({
-    completionId: completion.id,
-    signingAlgo: "ed25519",
-  });
-  client.clearResponseCache();
+  let completion;
+  try {
+    completion = await withNbfRetry("structured create", () =>
+      sdk.createCompletion
+        ? sdk.createCompletion({ client, messages })
+        : client.chat.completions.create(
+            { model: MODEL, messages, stream: false, response_format: SCHEMA },
+            { signal: AbortSignal.timeout(120_000) }
+          )
+    );
+  } catch (e) {
+    throw tagSdk(e, "createCompletion", { attested });
+  }
+  let verified;
+  try {
+    verified = await (sdk.verifyResponse
+      ? sdk.verifyResponse({ client, completion })
+      : client.verifyResponse(completion.id));
+  } catch (e) {
+    throw tagSdk(e, "verifyResponse", { attested, completion });
+  }
+  let sig = null;
+  try {
+    if (sdk.fetchSignature) {
+      sig = await sdk.fetchSignature({ completion });
+    } else {
+      const attClient = new AttestationClient({ apiKey });
+      sig = await attClient.fetchCompletionSignature({
+        completionId: completion.id,
+        signingAlgo: "ed25519",
+      });
+    }
+  } catch {
+    sig = null;
+  }
+  if (typeof client.clearResponseCache === "function") client.clearResponseCache();
   return { attested, completion, verified, sig };
 }
 
@@ -286,6 +396,7 @@ export async function analyzeEvidence({
   getReceiptFn = getReceipt,
   txStatusFn,
   dcapFn,
+  sdk,
 }) {
   const text = evidenceText ?? Buffer.from(evidenceBytes).toString("utf8");
   const bytes = evidenceBytes ?? Buffer.from(text, "utf8");
@@ -295,51 +406,30 @@ export async function analyzeEvidence({
     (envSalt ? hexToBytes(envSalt.replace(/^0x/i, "")) : newSalt());
   const commitment = evidenceCommitment(caseSalt, bytes);
 
-  const teeResult = tee
-    ? await tee({ evidenceText: text, apiKey })
-    : await defaultTee({ evidenceText: text, apiKey });
+  const checks = emptyChecks();
+  let teeResult;
+  try {
+    teeResult = tee
+      ? await tee({ evidenceText: text, apiKey })
+      : await defaultTee({ evidenceText: text, apiKey, sdk });
+  } catch (e) {
+    if (e.attested) applyTcbChecks(checks, e.attested);
+    const mapped = classifySdkError(e, e.sdkStage || "tee");
+    if (mapped.row) {
+      setCheck(checks, mapped.row, "fail", {
+        reason: `${mapped.stage}: ${mapped.code}`,
+        evidence: { stage: mapped.stage, code: mapped.code },
+      });
+    }
+    throw new PipelineError(
+      mapped.pipelineCode,
+      e.message || String(e),
+      checks
+    );
+  }
 
   const { attested, completion, verified, sig } = teeResult;
-  const checks = emptyChecks();
-
-  const gwTcb = attested.gateway?.tcbStatus || attested.gateway?.tcb_status || null;
-  const modelTcb =
-    attested.models?.[0]?.tcbStatus || attested.models?.[0]?.tcb_status || null;
-
-  if (!gwTcb) {
-    setCheck(checks, "gateway_tcb", "fail", { reason: "gateway tcbStatus missing" });
-  } else if (gwTcb !== "UpToDate") {
-    setCheck(checks, "gateway_tcb", "fail", {
-      reason: `gateway tcb=${gwTcb}`,
-      evidence: { tcb_status: gwTcb },
-    });
-  } else {
-    setCheck(checks, "gateway_tcb", "pass", { evidence: { tcb_status: gwTcb } });
-  }
-  if (!modelTcb) {
-    setCheck(checks, "model_tcb", "fail", { reason: "model tcbStatus missing" });
-  } else if (modelTcb !== "UpToDate") {
-    setCheck(checks, "model_tcb", "fail", {
-      reason: `model tcb=${modelTcb}`,
-      evidence: { tcb_status: modelTcb },
-    });
-  } else {
-    setCheck(checks, "model_tcb", "pass", { evidence: { tcb_status: modelTcb } });
-  }
-  if (attested.tcbOk === false) {
-    if (checks.gateway_tcb.status === "pass") {
-      setCheck(checks, "gateway_tcb", "fail", {
-        reason: "tcbOk=false",
-        evidence: { tcb_status: gwTcb },
-      });
-    }
-    if (checks.model_tcb.status === "pass") {
-      setCheck(checks, "model_tcb", "fail", {
-        reason: "tcbOk=false",
-        evidence: { tcb_status: modelTcb },
-      });
-    }
-  }
+  const { gwTcb, modelTcb } = applyTcbChecks(checks, attested);
   if (checks.gateway_tcb.status === "fail" || checks.model_tcb.status === "fail") {
     const reason =
       checks.gateway_tcb.status === "fail"
@@ -371,15 +461,10 @@ export async function analyzeEvidence({
     evidence: { nonce: shortHex(nonceHex), kind: "format" },
   });
 
-  const requestNonce = attestationNonceHex(
-    teeResult.requestNonce ??
-      attested.clientBinding?.nonce ??
-      attested.gateway?.clientBinding?.nonce ??
-      attested.models?.[0]?.clientBinding?.nonce
-  );
+  const requestNonce = attestationNonceHex(teeResult.requestNonce);
   if (!requestNonce) {
     setCheck(checks, "nonce_binding", "unsupported", {
-      reason: "SDK did not expose the request nonce used for this verification",
+      reason: "SDK enforces request binding internally; this app did not generate a request nonce to compare",
     });
   } else if (requestNonce !== nonceHex) {
     setCheck(checks, "nonce_binding", "fail", {
@@ -405,17 +490,26 @@ export async function analyzeEvidence({
       checks
     );
   }
-  const signerRaw = sig?.signer ?? sig?.signingAddress ?? sig?.signing_address;
-  const signerStr =
-    typeof signerRaw === "string"
-      ? signerRaw.replace(/^0x/, "")
-      : signerRaw?.signingAddress || signerRaw?.publicKey || "";
+  const verifiedSigner = normalizeSigner(
+    verified?.signature?.signer ?? verified?.signature?.signingAddress
+  );
+  const fetchedSigner = normalizeSigner(
+    sig?.signer ?? sig?.signingAddress ?? sig?.signing_address
+  );
+  if (verifiedSigner && fetchedSigner && verifiedSigner !== fetchedSigner) {
+    setCheck(checks, "signature", "fail", {
+      reason: "fetched completion signer does not match verifyResponse signer",
+      evidence: { signature_kind: verified.signatureKind, signer_compared: true },
+    });
+    throw new PipelineError("SIGNER_MISMATCH", "signer mismatch", checks);
+  }
+  const signerStr = verifiedSigner || "";
   setCheck(checks, "signature", "pass", {
     evidence: {
       signature_kind: verified.signatureKind,
-      signer: signerStr
-        ? String(signerStr).slice(0, 8) + "…" + String(signerStr).slice(-8)
-        : null,
+      ...(verifiedSigner && fetchedSigner
+        ? { signer_compared: true, signer: shortHex(verifiedSigner) }
+        : {}),
     },
   });
 
@@ -493,7 +587,7 @@ export async function analyzeEvidence({
   const signedText = sig.signedText ?? sig.text ?? "";
   const signature =
     typeof sig.signature === "string" ? sig.signature : String(sig.signature ?? "");
-  const signer = signerStr;
+  const signer = signerStr || fetchedSigner;
   const [modelId, reqHex, respHex] = signedText.split(":");
 
   const allowance = await allowanceFn();

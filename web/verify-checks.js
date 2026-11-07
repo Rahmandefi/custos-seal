@@ -19,7 +19,7 @@ export const CHECK_ORDER = [
   {
     id: "nonce_binding",
     title: "Nonce request binding",
-    source: "Reported nonce must equal the request nonce used for this verification. Unavailable if the SDK does not expose that nonce",
+    source: "App-visible only if this process generated a request nonce independently and compared it. The SDK may bind internally without exposing that nonce",
   },
   {
     id: "signature",
@@ -144,18 +144,15 @@ export function fieldHex(v) {
 }
 
 export function txExecutionState(outcome) {
-  if (!outcome) return "unknown";
-  if (outcome.state) return outcome.state;
-  if (outcome.status === "pending" || outcome.pending === true || outcome.finality === "pending") {
-    return "pending";
-  }
+  if (!outcome || typeof outcome !== "object") return "unknown";
   const st = outcome.status;
-  const failed = st === "failure" || (st && typeof st === "object" && "Failure" in st);
-  const ok = st === "success" || (st && typeof st === "object" && "SuccessValue" in st);
-  const final = outcome.finality === "final" || outcome.final === true;
+  if (st == null || typeof st !== "object") return "unknown";
+  const failed = Object.prototype.hasOwnProperty.call(st, "Failure");
+  const ok = Object.prototype.hasOwnProperty.call(st, "SuccessValue");
+  const isFinal = outcome.final_execution_status === "FINAL";
   if (failed) return "failure";
-  if (ok && final) return "final_success";
-  if (ok && !final) return "pending";
+  if (ok && isFinal) return "final_success";
+  if (ok && !isFinal) return "pending";
   return "unknown";
 }
 
@@ -170,11 +167,22 @@ export function receiptMatchesIntended(onchain, intended) {
   return true;
 }
 
+export function limitationLabels(checks) {
+  if (!checks) return [];
+  return CHECK_ORDER.filter((r) => LIVE.has(r.id) && checks[r.id]?.status === "unsupported").map(
+    (r) => r.title
+  );
+}
+
 export function overallVerification(checks) {
   if (!checks) return "unavailable";
   const live = CHECK_ORDER.filter((r) => LIVE.has(r.id)).map((r) => checks[r.id]);
   if (live.some((c) => c.status === "fail")) return "failed";
-  if (checks.recording?.status === "pass" && canRecord(checks)) return "verified";
+  if (checks.recording?.status === "pass" && canRecord(checks)) {
+    if (limitationLabels(checks).length) return "incomplete";
+    if (live.some((c) => c.status === "not_run")) return "incomplete";
+    return "verified";
+  }
   if (live.every((c) => c.status === "not_run" || c.status === "unsupported")) return "unavailable";
   return "incomplete";
 }
@@ -196,6 +204,7 @@ export function panelView(analyze) {
     };
   }
   const overall = overallVerification(checks);
+  const limits = limitationLabels(checks);
   const chip =
     analyze?.running && overall === "unavailable"
       ? "Analyzing"
@@ -204,7 +213,9 @@ export function panelView(analyze) {
         : overall === "failed"
           ? "Unable to verify"
           : overall === "incomplete"
-            ? "Verification incomplete"
+            ? limits.length
+              ? `Verification incomplete (${limits.join("; ")})`
+              : "Verification incomplete"
             : "Verification unavailable";
   return {
     chip,

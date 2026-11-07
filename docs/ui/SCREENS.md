@@ -39,11 +39,12 @@ A checklist driven by this analysis request, not a timer. Rows the backend actua
 
 - Gateway TCB (SDK `tcbStatus`, UpToDate only)
 - Model TCB (same)
-- Nonce from attested reports (32-byte hex; reject reuse; not quote REPORTDATA)
+- Nonce format (32-byte hex on reports; reject reuse)
+- Nonce request binding only when this app generated a request nonce independently; otherwise unsupported (SDK may still bind internally)
 - Reply signature kind (`provider_tee` from `verifyResponse`)
 - Citations (quote bytes in the uploaded evidence)
 - Independent DCAP via `verify_report.py` when that script ran; otherwise unsupported
-- Recorded in the custody log only after `record_finding` and `receipt_count` increment
+- Recorded in the custody log only after successful FINAL execution of the submitted transaction and a matching on-chain receipt (case, finding hash, nonce, evidence commitment)
 
 RTMR3, MRCONFIGID, NVIDIA NRAS, and prompt-encryption validation are shown as not established in this request.
 
