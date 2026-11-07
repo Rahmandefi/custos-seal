@@ -36,7 +36,7 @@ import {
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
-import { panelView, freshAnalyzeState } from "./verify-checks.js?v=__ASSET_V__";
+import { panelView, freshAnalyzeState, errorCopy } from "./verify-checks.js?v=__ASSET_V__";
 import {
   eventsEnabled,
   eventsContractId,
@@ -720,12 +720,14 @@ function viewAnalyze() {
   const view = panelView(a);
   const rows = view.rows.map(checkRowHtml).join("");
   const overallOk = view.overall === "verified";
+  const copy = errorCopy(a) || {};
   const result = a?.done
     ? a.error || view.overall === "failed"
       ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
-          <div class="alab">Unable to verify</div>
-          <h2>${esc(a.error || view.chip)}</h2>
-          <p class="lede">No verified finding was recorded (fail closed). ${a.skip_chain ? "The contract was not called." : ""}</p>
+          <div class="alab">${esc(copy.chip || view.chip || "Unable to verify")}</div>
+          <h2>${esc(copy.headline || a.error || view.chip)}</h2>
+          <p class="lede">${esc(copy.body || "")}</p>
+          ${copy.tx ? `<p class="mono mut">${esc(copy.tx)}</p>` : ""}
         </div>`
       : overallOk
       ? `<div class="card" style="padding:16px 20px;border-color:var(--m);background:var(--p)">
@@ -751,7 +753,13 @@ function viewAnalyze() {
         <input id="ev" name="file" type="file" required />
         <p class="lede">Use samples/larkmoor-listing.txt for the demo.</p>
         <button class="btn primary" type="submit" ${a?.running ? "disabled" : ""}>${svg("list", 17)}${a?.running ? "Analyzing…" : "Analyze"}</button>
-        ${a?.error || state.walk.analyzeError ? `<div class="ar done" style="background:var(--d);border-color:var(--g)"><span class="alab">Unable to verify</span><p>No receipt was written. Retry or Back.</p></div>` : ""}
+        ${
+          a?.error || state.walk.analyzeError
+            ? `<div class="ar done" style="background:var(--d);border-color:var(--g)"><span class="alab">${esc(
+                copy.chip || "Unable to verify"
+              )}</span><p>${esc(copy.headline || copy.body || a.error || state.walk.analyzeError)}</p></div>`
+            : ""
+        }
       </form>
     </div>
     <div class="card strip"><div class="sl">Verified panel</div><div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>
@@ -1780,6 +1788,9 @@ function bind() {
             error: writeFailMsg(data, res.status),
             skip_chain: data.skip_chain,
             checks: data.checks || state.analyze.checks,
+            tx: data.tx || null,
+            code: data.code || null,
+            execution: data.execution || null,
           };
           state.walk.analyzeError = writeFailMsg(data, res.status);
           state.walk.receiptId = null;

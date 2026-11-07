@@ -44,11 +44,13 @@ import {
 } from "../web/verify-checks.js";
 
 export class PipelineError extends Error {
-  constructor(code, message, checks = null) {
+  constructor(code, message, checks = null, opts = {}) {
     super(message);
     this.code = code;
-    this.skipChain = true;
     this.checks = checks;
+    this.skipChain = opts.skipChain ?? true;
+    this.tx = opts.tx ?? null;
+    this.execution = opts.execution ?? null;
   }
 }
 
@@ -679,7 +681,10 @@ export async function analyzeEvidence({
         setCheck(checks, "recording", "fail", {
           reason: "no transaction hash from record_finding",
         });
-        throw new PipelineError("RECORDING_FAILED", "missing transaction hash", checks);
+        throw new PipelineError("RECORDING_FAILED", "missing transaction hash", checks, {
+          skipChain: false,
+          execution: "unknown",
+        });
       }
       const statuser =
         txStatusFn ||
@@ -697,7 +702,11 @@ export async function analyzeEvidence({
           reason: `transaction status unknown: ${e.message || e}`,
           evidence: { tx },
         });
-        throw new PipelineError("RECORDING_UNCONFIRMED", String(e.message || e), checks);
+        throw new PipelineError("RECORDING_UNCONFIRMED", String(e.message || e), checks, {
+          skipChain: false,
+          tx,
+          execution: "unknown",
+        });
       }
       const exec = txExecutionState(outcome);
       if (exec === "pending" || exec === "unknown") {
@@ -705,14 +714,22 @@ export async function analyzeEvidence({
           reason: `transaction ${exec}; not FINAL success`,
           evidence: { tx },
         });
-        throw new PipelineError("RECORDING_UNCONFIRMED", `tx ${exec}`, checks);
+        throw new PipelineError("RECORDING_UNCONFIRMED", `tx ${exec}`, checks, {
+          skipChain: false,
+          tx,
+          execution: exec,
+        });
       }
       if (exec !== "final_success") {
         setCheck(checks, "recording", "fail", {
           reason: "transaction failed",
           evidence: { tx },
         });
-        throw new PipelineError("RECORDING_FAILED", "transaction failed", checks);
+        throw new PipelineError("RECORDING_FAILED", "transaction failed", checks, {
+          skipChain: false,
+          tx,
+          execution: "failure",
+        });
       }
       const intended = {
         case_id: caseId,
@@ -743,7 +760,12 @@ export async function analyzeEvidence({
           reason: "no on-chain receipt matches case, finding hash, nonce, and evidence commitment",
           evidence: { tx },
         });
-        throw new PipelineError("RECORDING_MISMATCH", "stored receipt does not match the intended write", checks);
+        throw new PipelineError(
+          "RECORDING_MISMATCH",
+          "stored receipt does not match the intended write",
+          checks,
+          { skipChain: false, tx, execution: "mismatch" }
+        );
       }
       setCheck(checks, "recording", "pass", {
         evidence: {
@@ -761,7 +783,11 @@ export async function analyzeEvidence({
         reason: e.message || "record_finding failed",
         evidence: { tx: tx || null },
       });
-      throw new PipelineError("RECORDING_FAILED", String(e.message || e), checks);
+      throw new PipelineError("RECORDING_FAILED", String(e.message || e), checks, {
+        skipChain: false,
+        tx: tx || null,
+        execution: "unknown",
+      });
     }
   } else {
     setCheck(checks, "recording", "not_run", {

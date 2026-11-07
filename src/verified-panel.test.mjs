@@ -13,6 +13,7 @@ import {
   overallVerification,
   freshAnalyzeState,
   txExecutionState,
+  errorCopy,
 } from "../web/verify-checks.js";
 
 const evidenceText =
@@ -114,6 +115,19 @@ const local = {
   allowanceFn: async () => ({ allowance: "100000000000000000000000" }),
 };
 
+function asAnalyze(err) {
+  return {
+    done: true,
+    error: err.message,
+    checks: err.checks,
+    skip_chain: err.skipChain,
+    skipChain: err.skipChain,
+    tx: err.tx,
+    code: err.code,
+    execution: err.execution,
+  };
+}
+
 test("Verified panel truthfulness regression: valid evidence only executed checks can pass", async () => {
   await withTmp(async (outDir) => {
     const result = await analyzeEvidence({
@@ -192,6 +206,14 @@ test("Verified panel truthfulness regression: malformed nonce fails, recording n
     assert.ok(err.checks.citations.status !== "pass");
     assert.ok(err.checks.recording.status !== "pass");
     assert.equal(err.checks.nonce_binding.status, "not_run");
+    assert.equal(err.skipChain, true);
+    assert.equal(err.tx, null);
+    const view = panelView(asAnalyze(err));
+    const copy = errorCopy(asAnalyze(err));
+    assert.equal(view.chip, "Unable to verify");
+    assert.equal(copy.headline, "No verified finding was recorded");
+    assert.equal(copy.body, "The contract was not called.");
+    assert.equal(copy.skipChain, true);
   });
 });
 
@@ -323,6 +345,17 @@ test("Verified panel truthfulness regression: failed transaction does not pass R
     assert.equal(err.code, "RECORDING_FAILED");
     assert.equal(err.checks.recording.status, "fail");
     assert.notEqual(err.checks.recording.status, "pass");
+    assert.equal(err.skipChain, false);
+    assert.equal(err.execution, "failure");
+    assert.equal(err.tx, "ok-tx");
+    const copy = errorCopy(asAnalyze(err));
+    const view = panelView(asAnalyze(err));
+    assert.equal(view.chip, "Unable to verify");
+    assert.equal(copy.headline, "Transaction failed");
+    assert.match(copy.body, /Do not automatically resubmit/);
+    assert.match(copy.body, /ok-tx/);
+    assert.ok(!/The contract was not called/.test(copy.body || ""));
+    assert.ok(!/No verified finding was recorded/.test(copy.headline));
   });
 });
 
@@ -342,6 +375,17 @@ test("Verified panel truthfulness regression: pending transaction remains unconf
     assert.equal(err.code, "RECORDING_UNCONFIRMED");
     assert.equal(err.checks.recording.status, "fail");
     assert.notEqual(err.checks.recording.status, "pass");
+    assert.equal(err.skipChain, false);
+    assert.equal(err.execution, "pending");
+    assert.equal(err.tx, "ok-tx");
+    const copy = errorCopy(asAnalyze(err));
+    const view = panelView(asAnalyze(err));
+    assert.equal(view.chip, "Unable to verify");
+    assert.equal(copy.headline, "Recording not confirmed; a receipt may exist");
+    assert.match(copy.body, /ok-tx/);
+    assert.ok(!/The contract was not called/.test(copy.body || ""));
+    assert.ok(!/No verified finding was recorded/.test(copy.headline));
+    assert.ok(!/Transaction failed/.test(copy.headline));
   });
 });
 
@@ -367,6 +411,13 @@ test("Verified panel truthfulness regression: unrelated receipt increasing count
     );
     assert.equal(err.code, "RECORDING_MISMATCH");
     assert.equal(err.checks.recording.status, "fail");
+    assert.equal(err.skipChain, false);
+    assert.equal(err.execution, "mismatch");
+    assert.equal(err.tx, "ok-tx");
+    const copy = errorCopy(asAnalyze(err));
+    assert.equal(copy.headline, "On-chain receipt does not match the intended write");
+    assert.match(copy.body, /ok-tx/);
+    assert.ok(!/The contract was not called/.test(copy.body || ""));
   });
 });
 
@@ -393,6 +444,13 @@ test("Verified panel truthfulness regression: receipt with mismatched fields doe
     );
     assert.equal(err.code, "RECORDING_MISMATCH");
     assert.equal(err.checks.recording.status, "fail");
+    assert.equal(err.skipChain, false);
+    assert.equal(err.tx, "ok-tx");
+    const copy = errorCopy(asAnalyze(err));
+    const view = panelView(asAnalyze(err));
+    assert.equal(view.chip, "Unable to verify");
+    assert.equal(copy.headline, "On-chain receipt does not match the intended write");
+    assert.match(copy.body, /ok-tx/);
   });
 });
 
@@ -604,6 +662,15 @@ test("Verified panel truthfulness regression: ambiguous SDK error does not guess
     assert.equal(err.checks.gateway_tcb.status, "not_run");
     assert.equal(err.checks.nonce_binding.status, "not_run");
     assert.equal(err.checks.signature.status, "not_run");
+    assert.equal(err.skipChain, true);
+    const view = panelView(asAnalyze(err));
+    const copy = errorCopy(asAnalyze(err));
+    assert.equal(view.chip, "Unable to verify");
+    assert.notEqual(view.chip, "Verification unavailable");
+    assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "unsupported"));
+    assert.ok(!view.rows.some((r) => r.status === "fail"));
+    assert.equal(copy.headline, "No verified finding was recorded");
+    assert.equal(copy.body, "The contract was not called.");
   });
 });
 
@@ -622,6 +689,12 @@ test("Verified panel truthfulness regression: missing status never passes Record
     );
     assert.equal(err.code, "RECORDING_UNCONFIRMED");
     assert.notEqual(err.checks.recording.status, "pass");
+    assert.equal(err.skipChain, false);
+    assert.equal(err.execution, "unknown");
+    assert.equal(err.tx, "ok-tx");
+    const copy = errorCopy(asAnalyze(err));
+    assert.equal(copy.headline, "Recording not confirmed; a receipt may exist");
+    assert.match(copy.body, /ok-tx/);
   });
 });
 

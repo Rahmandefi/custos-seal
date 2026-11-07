@@ -174,8 +174,8 @@ export function limitationLabels(checks) {
   );
 }
 
-export function overallVerification(checks) {
-  if (!checks) return "unavailable";
+export function overallVerification(checks, analyze = {}) {
+  if (!checks) return analyze.error ? "failed" : "unavailable";
   const live = CHECK_ORDER.filter((r) => LIVE.has(r.id)).map((r) => checks[r.id]);
   if (live.some((c) => c.status === "fail")) return "failed";
   if (checks.recording?.status === "pass" && canRecord(checks)) {
@@ -183,17 +183,80 @@ export function overallVerification(checks) {
     if (live.some((c) => c.status === "not_run")) return "incomplete";
     return "verified";
   }
-  if (live.every((c) => c.status === "not_run" || c.status === "unsupported")) return "unavailable";
+  if (live.every((c) => c.status === "not_run" || c.status === "unsupported")) {
+    return analyze.error ? "failed" : "unavailable";
+  }
   return "incomplete";
+}
+
+export function errorCopy(analyze) {
+  if (!analyze || (!analyze.error && analyze.overall !== "failed" && !analyze.code)) return null;
+  const tx = analyze.tx || analyze.checks?.recording?.evidence?.tx || null;
+  const execution = analyze.execution || null;
+  const skipChain = analyze.skip_chain ?? analyze.skipChain ?? true;
+  const code = analyze.code;
+  if (execution === "failure") {
+    return {
+      chip: "Unable to verify",
+      headline: "Transaction failed",
+      body: tx
+        ? `Transaction ${tx}. Do not automatically resubmit.`
+        : "The submitted transaction did not succeed. Do not automatically resubmit.",
+      skipChain: false,
+      tx,
+    };
+  }
+  if (
+    execution === "pending" ||
+    execution === "unknown" ||
+    code === "RECORDING_UNCONFIRMED"
+  ) {
+    return {
+      chip: "Unable to verify",
+      headline: "Recording not confirmed; a receipt may exist",
+      body: tx ? `Transaction ${tx}.` : null,
+      skipChain: false,
+      tx,
+    };
+  }
+  if (code === "RECORDING_MISMATCH" || execution === "mismatch") {
+    return {
+      chip: "Unable to verify",
+      headline: "On-chain receipt does not match the intended write",
+      body: tx ? `Transaction ${tx}.` : null,
+      skipChain: false,
+      tx,
+    };
+  }
+  if (skipChain) {
+    return {
+      chip: "Unable to verify",
+      headline: "No verified finding was recorded",
+      body: "The contract was not called.",
+      skipChain: true,
+      tx: null,
+    };
+  }
+  return {
+    chip: "Unable to verify",
+    headline: "Recording not confirmed; a receipt may exist",
+    body: tx ? `Transaction ${tx}.` : null,
+    skipChain: false,
+    tx,
+  };
 }
 
 /** UI mapping. Ignores timer ticks. Missing checks stay unverified. */
 export function panelView(analyze) {
   const checks = analyze?.checks;
+  const copy = errorCopy(analyze);
   if (!checks) {
+    const failed = Boolean(analyze?.error);
     return {
-      chip: analyze?.running ? "Analyzing" : "Verification unavailable",
-      overall: "unavailable",
+      chip: analyze?.running ? "Analyzing" : failed ? "Unable to verify" : "Verification unavailable",
+      overall: failed ? "failed" : "unavailable",
+      headline: copy?.headline || null,
+      body: copy?.body || null,
       rows: CHECK_ORDER.map((r) => ({
         id: r.id,
         title: r.title,
@@ -203,7 +266,7 @@ export function panelView(analyze) {
       })),
     };
   }
-  const overall = overallVerification(checks);
+  const overall = overallVerification(checks, analyze);
   const limits = limitationLabels(checks);
   const chip =
     analyze?.running && overall === "unavailable"
@@ -220,6 +283,8 @@ export function panelView(analyze) {
   return {
     chip,
     overall,
+    headline: copy?.headline || null,
+    body: copy?.body || null,
     rows: CHECK_ORDER.map((r) => {
       const c = checks[r.id] || { status: "not_run" };
       return {

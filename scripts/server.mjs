@@ -515,6 +515,8 @@ export async function handleRequest(req, res) {
       code: e.code || "ERROR",
       skip_chain: Boolean(e.skipChain),
       checks: e.checks || null,
+      tx: e.tx || null,
+      execution: e.execution || null,
     });
   }
 }
