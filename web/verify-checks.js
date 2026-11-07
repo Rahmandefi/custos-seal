@@ -13,8 +13,13 @@ export const CHECK_ORDER = [
   },
   {
     id: "nonce",
-    title: "Nonce from attested reports",
-    source: "32-byte nonce on gateway/model reports; reject reuse. Does not parse quote REPORTDATA",
+    title: "Nonce format",
+    source: "Attested reports include a 32-byte hex nonce; reject reuse. Format only, not request binding",
+  },
+  {
+    id: "nonce_binding",
+    title: "Nonce request binding",
+    source: "Reported nonce must equal the request nonce used for this verification. Unavailable if the SDK does not expose that nonce",
   },
   {
     id: "signature",
@@ -34,7 +39,7 @@ export const CHECK_ORDER = [
   {
     id: "recording",
     title: "Recorded in the custody log",
-    source: "record_finding plus receipt_count increment. A transaction hash alone is not success",
+    source: "FINAL successful execution of the submitted transaction, then the matching on-chain receipt (case, finding hash, nonce, evidence commitment). Count growth is not success",
   },
   {
     id: "rtmr3",
@@ -62,6 +67,7 @@ const LIVE = new Set([
   "gateway_tcb",
   "model_tcb",
   "nonce",
+  "nonce_binding",
   "signature",
   "citations",
   "independent_dcap",
@@ -116,7 +122,51 @@ export function canRecord(checks) {
   for (const id of ["gateway_tcb", "model_tcb", "nonce", "signature", "citations"]) {
     if (checks[id]?.status !== "pass") return false;
   }
+  if (checks.nonce_binding?.status === "fail" || checks.nonce_binding?.status === "not_run") {
+    return false;
+  }
   if (checks.independent_dcap?.status === "fail") return false;
+  return true;
+}
+
+export function shortHex(hex) {
+  const h = String(hex || "");
+  if (h.length < 16) return h || null;
+  return h.slice(0, 8) + "…" + h.slice(-8);
+}
+
+export function fieldHex(v) {
+  if (v == null) return "";
+  if (Array.isArray(v)) return Buffer.from(v).toString("hex").toLowerCase();
+  if (typeof v === "string") return v.replace(/^0x/i, "").toLowerCase();
+  if (v instanceof Uint8Array || Buffer.isBuffer?.(v)) return Buffer.from(v).toString("hex").toLowerCase();
+  return "";
+}
+
+export function txExecutionState(outcome) {
+  if (!outcome) return "unknown";
+  if (outcome.state) return outcome.state;
+  if (outcome.status === "pending" || outcome.pending === true || outcome.finality === "pending") {
+    return "pending";
+  }
+  const st = outcome.status;
+  const failed = st === "failure" || (st && typeof st === "object" && "Failure" in st);
+  const ok = st === "success" || (st && typeof st === "object" && "SuccessValue" in st);
+  const final = outcome.finality === "final" || outcome.final === true;
+  if (failed) return "failure";
+  if (ok && final) return "final_success";
+  if (ok && !final) return "pending";
+  return "unknown";
+}
+
+export function receiptMatchesIntended(onchain, intended) {
+  if (!onchain || !intended) return false;
+  if (String(onchain.case_id || "") !== String(intended.case_id || "")) return false;
+  const f = onchain.finding || {};
+  if (fieldHex(f.finding_hash) !== fieldHex(intended.finding_hash)) return false;
+  if (fieldHex(f.nonce) !== fieldHex(intended.nonce)) return false;
+  const commit = onchain.evidence_commitments?.[0];
+  if (fieldHex(commit) !== fieldHex(intended.evidence_commitment)) return false;
   return true;
 }
 

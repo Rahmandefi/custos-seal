@@ -37,7 +37,10 @@ function goodFinding() {
 function teeStub(overrides = {}) {
   const finding = overrides.finding ?? goodFinding();
   const nonce = overrides.nonce === undefined ? "bb".repeat(32) : overrides.nonce;
+  const requestNonce =
+    overrides.requestNonce === undefined ? nonce : overrides.requestNonce;
   return async () => ({
+    requestNonce,
     attested: {
       tcbOk: overrides.tcbOk ?? true,
       gateway: {
@@ -62,6 +65,33 @@ function teeStub(overrides = {}) {
       signer: "44".repeat(32),
     },
   });
+}
+
+function chainFns({ txStatus, getReceipt, receiptCount = 8 } = {}) {
+  let stored = null;
+  return {
+    writeOnChain: true,
+    runDcap: false,
+    allowanceFn: local.allowanceFn,
+    recordFindingFn: async (args) => {
+      stored = args;
+      return { tx: "ok-tx", receipt_id: 7 };
+    },
+    txStatusFn: async () =>
+      txStatus ?? { status: { SuccessValue: "" }, finality: "final", receipt_id: 7 },
+    getReceiptFn: async (id) => {
+      if (getReceipt) return getReceipt(id, stored);
+      return {
+        id,
+        case_id: stored.case_id,
+        evidence_commitments: stored.evidence_commitments,
+        finding: stored.finding,
+      };
+    },
+    receiptCountFn: async () => receiptCount,
+    viewAccountFn: async () => ({ storage_usage: 1 }),
+    _stored: () => stored,
+  };
 }
 
 async function withTmp(fn) {
@@ -92,6 +122,8 @@ test("Verified panel truthfulness regression: valid evidence only executed check
     assert.equal(c.gateway_tcb.evidence.tcb_status, "UpToDate");
     assert.equal(c.model_tcb.status, "pass");
     assert.equal(c.nonce.status, "pass");
+    assert.equal(c.nonce.evidence.kind, "format");
+    assert.equal(c.nonce_binding.status, "pass");
     assert.equal(c.signature.status, "pass");
     assert.equal(c.signature.evidence.signature_kind, "provider_tee");
     assert.equal(c.citations.status, "pass");
@@ -104,11 +136,17 @@ test("Verified panel truthfulness regression: valid evidence only executed check
     assert.equal(overallVerification(c), "incomplete");
     const view = panelView({ done: true, checks: c });
     assert.equal(view.rows.find((r) => r.id === "rtmr3").status, "unsupported");
-    assert.ok(view.rows.every((r) => r.status !== "pass" || ["gateway_tcb", "model_tcb", "nonce", "signature", "citations"].includes(r.id)));
+    assert.ok(
+      view.rows.every(
+        (r) =>
+          r.status !== "pass" ||
+          ["gateway_tcb", "model_tcb", "nonce", "nonce_binding", "signature", "citations"].includes(r.id)
+      )
+    );
   });
 });
 
-test("Verified panel truthfulness regression: wrong nonce fails, recording not called, later checks do not pass", async () => {
+test("Verified panel truthfulness regression: malformed nonce fails, recording not called, later checks do not pass", async () => {
   await withTmp(async (outDir) => {
     let recorded = 0;
     await assert.rejects(
@@ -147,6 +185,53 @@ test("Verified panel truthfulness regression: wrong nonce fails, recording not c
     assert.ok(err.checks.signature.status !== "pass");
     assert.ok(err.checks.citations.status !== "pass");
     assert.ok(err.checks.recording.status !== "pass");
+    assert.equal(err.checks.nonce_binding.status, "not_run");
+  });
+});
+
+test("Verified panel truthfulness regression: valid nonce that differs from request nonce fails binding", async () => {
+  await withTmp(async (outDir) => {
+    let recorded = 0;
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      writeOnChain: true,
+      runDcap: false,
+      tee: teeStub({ nonce: "cc".repeat(32), requestNonce: "aa".repeat(32) }),
+      allowanceFn: local.allowanceFn,
+      recordFindingFn: async () => {
+        recorded += 1;
+        return { tx: "fake" };
+      },
+      txStatusFn: async () => ({ status: { SuccessValue: "" }, finality: "final" }),
+      getReceiptFn: async () => null,
+      receiptCountFn: async () => 0,
+      viewAccountFn: async () => ({ storage_usage: 0 }),
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "NONCE_BINDING");
+    assert.equal(err.checks.nonce.status, "pass");
+    assert.equal(err.checks.nonce_binding.status, "fail");
+    assert.equal(err.checks.signature.status, "not_run");
+    assert.equal(err.checks.citations.status, "not_run");
+    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(recorded, 0);
+  });
+});
+
+test("Verified panel truthfulness regression: binding unavailable when SDK omits request nonce", async () => {
+  await withTmp(async (outDir) => {
+    const result = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...local,
+      tee: teeStub({ requestNonce: null }),
+    });
+    assert.equal(result.checks.nonce.status, "pass");
+    assert.equal(result.checks.nonce_binding.status, "unsupported");
+    assert.notEqual(result.checks.nonce_binding.status, "pass");
   });
 });
 
@@ -216,30 +301,92 @@ test("Verified panel truthfulness regression: model TCB failure", async () => {
   });
 });
 
-test("Verified panel truthfulness regression: receipt write failure is not complete success", async () => {
+test("Verified panel truthfulness regression: failed transaction does not pass Recording", async () => {
   await withTmp(async (outDir) => {
-    let n = 3;
     const err = await analyzeEvidence({
       evidenceText,
       outDir,
-      writeOnChain: true,
-      runDcap: false,
       tee: teeStub(),
-      allowanceFn: local.allowanceFn,
-      recordFindingFn: async () => ({ tx: "hash-only-is-not-success" }),
-      receiptCountFn: async () => n,
-      viewAccountFn: async () => ({ storage_usage: 10 }),
+      ...chainFns({
+        txStatus: { status: { Failure: { error: "boom" } }, finality: "final" },
+      }),
     }).then(
       () => null,
       (e) => e
     );
     assert.equal(err.code, "RECORDING_FAILED");
-    assert.equal(err.checks.citations.status, "pass");
     assert.equal(err.checks.recording.status, "fail");
-    assert.equal(overallVerification(err.checks), "failed");
-    const view = panelView({ done: true, error: err.message, checks: err.checks });
-    assert.equal(view.overall, "failed");
-    assert.equal(view.chip, "Unable to verify");
+    assert.notEqual(err.checks.recording.status, "pass");
+  });
+});
+
+test("Verified panel truthfulness regression: pending transaction remains unconfirmed", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      tee: teeStub(),
+      ...chainFns({
+        txStatus: { status: { SuccessValue: "" }, finality: "optimistic" },
+      }),
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "RECORDING_UNCONFIRMED");
+    assert.equal(err.checks.recording.status, "fail");
+    assert.notEqual(err.checks.recording.status, "pass");
+  });
+});
+
+test("Verified panel truthfulness regression: unrelated receipt increasing count does not pass Recording", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      tee: teeStub(),
+      ...chainFns({
+        txStatus: { status: { SuccessValue: "" }, finality: "final" },
+        receiptCount: 12,
+        getReceipt: () => ({
+          id: 11,
+          case_id: "unrelated-case",
+          evidence_commitments: [new Array(32).fill(1)],
+          finding: { finding_hash: new Array(32).fill(2), nonce: new Array(32).fill(3) },
+        }),
+      }),
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "RECORDING_MISMATCH");
+    assert.equal(err.checks.recording.status, "fail");
+  });
+});
+
+test("Verified panel truthfulness regression: receipt with mismatched fields does not pass Recording", async () => {
+  await withTmp(async (outDir) => {
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      tee: teeStub(),
+      ...chainFns({
+        getReceipt: (_id, stored) => ({
+          id: 7,
+          case_id: stored.case_id,
+          evidence_commitments: stored.evidence_commitments,
+          finding: {
+            ...stored.finding,
+            nonce: new Array(32).fill(9),
+          },
+        }),
+      }),
+    }).then(
+      () => null,
+      (e) => e
+    );
+    assert.equal(err.code, "RECORDING_MISMATCH");
+    assert.equal(err.checks.recording.status, "fail");
   });
 });
 
@@ -290,23 +437,14 @@ test("Verified panel truthfulness regression: no timer advances verification sta
 
 test("Verified panel truthfulness regression: confirmed recording is required for Verified", async () => {
   await withTmp(async (outDir) => {
-    let n = 4;
     const result = await analyzeEvidence({
       evidenceText,
       outDir,
-      writeOnChain: true,
-      runDcap: false,
       tee: teeStub(),
-      allowanceFn: local.allowanceFn,
-      recordFindingFn: async () => {
-        n += 1;
-        return { tx: "ok-tx" };
-      },
-      receiptCountFn: async () => n,
-      viewAccountFn: async () => ({ storage_usage: 1 }),
+      ...chainFns(),
     });
     assert.equal(result.checks.recording.status, "pass");
-    assert.equal(result.checks.recording.evidence.receipt_id, 4);
+    assert.equal(result.checks.recording.evidence.receipt_id, 7);
     assert.equal(overallVerification(result.checks), "verified");
   });
 });

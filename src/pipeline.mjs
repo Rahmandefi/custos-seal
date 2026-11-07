@@ -26,6 +26,7 @@ import {
   FNKEY,
   WRITER,
   callWriter,
+  getReceipt,
   receiptCount,
   rpc,
   viewAccount,
@@ -36,6 +37,10 @@ import {
   setCheck,
   attestationNonceHex,
   canRecord,
+  shortHex,
+  txExecutionState,
+  receiptMatchesIntended,
+  fieldHex,
 } from "../web/verify-checks.js";
 
 export class PipelineError extends Error {
@@ -278,6 +283,8 @@ export async function analyzeEvidence({
   recordFindingFn,
   receiptCountFn = receiptCount,
   viewAccountFn = viewAccount,
+  getReceiptFn = getReceipt,
+  txStatusFn,
   dcapFn,
 }) {
   const text = evidenceText ?? Buffer.from(evidenceBytes).toString("utf8");
@@ -356,13 +363,35 @@ export async function analyzeEvidence({
   if (seen.includes(nonceHex)) {
     setCheck(checks, "nonce", "fail", {
       reason: "nonce already used",
-      evidence: { nonce: nonceHex.slice(0, 8) + "…" + nonceHex.slice(-8) },
+      evidence: { nonce: shortHex(nonceHex) },
     });
     throw new PipelineError("NONCE_REUSED", `nonce ${nonceHex} already used`, checks);
   }
   setCheck(checks, "nonce", "pass", {
-    evidence: { nonce: nonceHex.slice(0, 8) + "…" + nonceHex.slice(-8) },
+    evidence: { nonce: shortHex(nonceHex), kind: "format" },
   });
+
+  const requestNonce = attestationNonceHex(
+    teeResult.requestNonce ??
+      attested.clientBinding?.nonce ??
+      attested.gateway?.clientBinding?.nonce ??
+      attested.models?.[0]?.clientBinding?.nonce
+  );
+  if (!requestNonce) {
+    setCheck(checks, "nonce_binding", "unsupported", {
+      reason: "SDK did not expose the request nonce used for this verification",
+    });
+  } else if (requestNonce !== nonceHex) {
+    setCheck(checks, "nonce_binding", "fail", {
+      reason: "reported nonce does not match the request nonce",
+      evidence: { request: shortHex(requestNonce), reported: shortHex(nonceHex) },
+    });
+    throw new PipelineError("NONCE_BINDING", "request nonce mismatch", checks);
+  } else {
+    setCheck(checks, "nonce_binding", "pass", {
+      evidence: { request: shortHex(requestNonce), reported: shortHex(nonceHex) },
+    });
+  }
   const nonceBytes = nonceToBytes(nonceHex);
 
   if (verified?.signatureKind !== "provider_tee") {
@@ -548,32 +577,90 @@ export async function analyzeEvidence({
     }
     try {
       storageBefore = (await viewAccountFn(CONTRACT)).storage_usage;
-      const countBefore = await receiptCountFn();
       const writer = recordFindingFn || ((args, opts) => callWriter("record_finding", args, opts));
       const sent = await writer(recordArgs, { outDir });
       tx = sent?.tx ?? sent?.transaction?.hash ?? null;
-      const countAfter = await receiptCountFn();
       storageAfter = (await viewAccountFn(CONTRACT)).storage_usage;
-      if (countAfter !== countBefore + 1) {
+      if (!tx) {
         setCheck(checks, "recording", "fail", {
-          reason: `receipt_count did not increase (before ${countBefore}, after ${countAfter}). Transaction hash is not success.`,
-          evidence: { tx: tx || null, receipt_count_before: countBefore, receipt_count_after: countAfter },
+          reason: "no transaction hash from record_finding",
         });
-        throw new PipelineError(
-          "RECORDING_FAILED",
-          `expected receipt_count ${countBefore + 1}, got ${countAfter}`,
-          checks
-        );
+        throw new PipelineError("RECORDING_FAILED", "missing transaction hash", checks);
       }
-      receiptId = countAfter - 1;
+      const statuser =
+        txStatusFn ||
+        (async (hash) =>
+          rpc("EXPERIMENTAL_tx_status", {
+            tx_hash: hash,
+            sender_account_id: WRITER,
+            wait_until: "FINAL",
+          }));
+      let outcome;
+      try {
+        outcome = await statuser(tx);
+      } catch (e) {
+        setCheck(checks, "recording", "fail", {
+          reason: `transaction status unknown: ${e.message || e}`,
+          evidence: { tx },
+        });
+        throw new PipelineError("RECORDING_UNCONFIRMED", String(e.message || e), checks);
+      }
+      const exec = txExecutionState(outcome);
+      if (exec === "pending" || exec === "unknown") {
+        setCheck(checks, "recording", "fail", {
+          reason: `transaction ${exec}; not FINAL success`,
+          evidence: { tx },
+        });
+        throw new PipelineError("RECORDING_UNCONFIRMED", `tx ${exec}`, checks);
+      }
+      if (exec !== "final_success") {
+        setCheck(checks, "recording", "fail", {
+          reason: "transaction failed",
+          evidence: { tx },
+        });
+        throw new PipelineError("RECORDING_FAILED", "transaction failed", checks);
+      }
+      const intended = {
+        case_id: caseId,
+        finding_hash: bytesToHex(fHash),
+        nonce: nonceHex,
+        evidence_commitment: commitHex,
+      };
+      let rec = null;
+      const hinted = outcome.receipt_id ?? sent.receipt_id;
+      if (hinted != null && hinted !== "") {
+        rec = await getReceiptFn(Number(hinted));
+        if (receiptMatchesIntended(rec, intended)) receiptId = Number(hinted);
+        else rec = null;
+      }
+      if (!receiptMatchesIntended(rec, intended)) {
+        const n = await receiptCountFn();
+        for (let i = n - 1; i >= 0 && i >= n - 64; i--) {
+          const cand = await getReceiptFn(i);
+          if (receiptMatchesIntended(cand, intended)) {
+            rec = cand;
+            receiptId = i;
+            break;
+          }
+        }
+      }
+      if (!receiptMatchesIntended(rec, intended)) {
+        setCheck(checks, "recording", "fail", {
+          reason: "no on-chain receipt matches case, finding hash, nonce, and evidence commitment",
+          evidence: { tx },
+        });
+        throw new PipelineError("RECORDING_MISMATCH", "stored receipt does not match the intended write", checks);
+      }
       setCheck(checks, "recording", "pass", {
         evidence: {
           receipt_id: receiptId,
-          tx: tx || null,
+          tx,
           tcb_status: gwTcb,
+          case_id: rec.case_id,
+          finding_hash: shortHex(fieldHex(rec.finding?.finding_hash)),
         },
       });
-      if (tx) await rememberTx(outDir, receiptId, tx);
+      await rememberTx(outDir, receiptId, tx);
     } catch (e) {
       if (e instanceof PipelineError) throw e;
       setCheck(checks, "recording", "fail", {
