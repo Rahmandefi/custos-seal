@@ -65,6 +65,16 @@ is rejected by NEAR before transfer, cross-contract, disallowed method, or
 deposit calls execute. The app does not move funds; the demo is about limiting
 a triage key, not about stopping a chain robbery.
 
+## Optional wallet-signed events (disabled)
+
+A **separate** testnet contract can record investigator-signed `start_case` and
+`attest_verification` hashes. Comparison still happens in the app; the contract
+stores opaque hashes only. Controls stay hidden until server env
+`WALLET_EVENTS_CONTRACT_ID` is set to a **new** account. Never point it at
+`ftcust15e434.testnet`. Print-only CLI helpers live in
+`wallet-signing-scripts/`. This repo does not ship that WASM. Do not create,
+fund, or deploy the events account from these notes.
+
 ## Sustainability (proposal: not built)
 
 Candidate model for later: a per-case or per-receipt fee paid in NEAR, plus

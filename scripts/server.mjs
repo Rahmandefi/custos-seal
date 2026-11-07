@@ -30,6 +30,12 @@ import { renderPdf } from "../src/render-pdf.mjs";
 
 await loadEnv();
 
+function walletEventsContractId() {
+  const id = String(process.env.WALLET_EVENTS_CONTRACT_ID || "").trim();
+  if (!id || id === "ftcust15e434.testnet") return null;
+  return id;
+}
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = process.env.OUT_DIR || (process.env.VERCEL ? "/tmp/custos-out" : join(ROOT, "out"));
 const WEB = join(ROOT, "web");
@@ -128,6 +134,7 @@ async function statusPayload() {
       receipt_count: n,
       storage_usage: acct.storage_usage,
       receipts,
+      wallet_events_contract: walletEventsContractId(),
     },
   };
   return statusCache.body;
@@ -440,18 +447,31 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "POST" && req.url === "/api/verify") {
-      const j = JSON.parse((await readBody(req)).toString("utf8"));
-      const file = Buffer.from(j.file_b64, "base64");
-      const salt = hexToBytes(j.salt);
-      const chain = await getReceipt(Number(j.id));
-      const commit = evidenceCommitment(salt, file);
-      const expected = Buffer.from(chain.evidence_commitments[0]).toString("hex");
-      json(res, 200, {
-        id: Number(j.id),
-        evidence_commitment: commit.toString("hex") === expected,
-        expected,
-        found: commit.toString("hex"),
-      });
+      try {
+        const j = JSON.parse((await readBody(req)).toString("utf8"));
+        if (!j.file_b64 || !j.salt || j.id == null) {
+          json(res, 400, { unable: true, error: "file, salt, and receipt id are required" });
+          return;
+        }
+        const file = Buffer.from(j.file_b64, "base64");
+        const salt = hexToBytes(j.salt);
+        const chain = await getReceipt(Number(j.id));
+        if (!chain?.evidence_commitments?.[0]) {
+          json(res, 400, { unable: true, error: "receipt has no evidence commitment" });
+          return;
+        }
+        const commit = evidenceCommitment(salt, file);
+        const expected = Buffer.from(chain.evidence_commitments[0]).toString("hex");
+        json(res, 200, {
+          id: Number(j.id),
+          evidence_commitment: commit.toString("hex") === expected,
+          expected,
+          found: commit.toString("hex"),
+          unable: false,
+        });
+      } catch (e) {
+        json(res, 500, { unable: true, error: e.message || "verify failed" });
+      }
       return;
     }
     if (req.method === "GET" && (req.url === "/" || req.url?.startsWith("/web") || !req.url.startsWith("/api"))) {

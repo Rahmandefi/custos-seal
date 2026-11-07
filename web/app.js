@@ -36,6 +36,21 @@ import {
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
+import {
+  eventsEnabled,
+  eventsContractId,
+  consentCopy,
+  prepareStartCase,
+  prepareAttest,
+  sendStartCase,
+  sendAttest,
+  liveSigner,
+  resultReportHash,
+  txHashOf,
+  savePending,
+  outcomeFinalSuccess,
+  matchingEvent,
+} from "./wallet-events.js?v=__ASSET_V__";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -96,6 +111,9 @@ const state = {
   sampleSalt: "",
   localFindings: {},
   showTour: false,
+  eventsMsg: "",
+  eventsBusy: false,
+  eventsConsent: null,
 };
 
 function persistWalk() {
@@ -527,6 +545,40 @@ function viewLand() {
   </div>`;
 }
 
+function eventsConsentHtml() {
+  const c = state.eventsConsent;
+  if (!c) return "";
+  return `<div class="card" id="events-consent" style="padding:16px 20px;display:grid;gap:8px">
+    <h2>${esc(c.title)}</h2>
+    <p class="lede">${esc(c.warning)}</p>
+    <dl class="kv">
+      <div><dt>Receiver</dt><dd class="mono">${esc(c.receiverId)}</dd></div>
+      <div><dt>Method</dt><dd class="mono">${esc(c.methodName)}</dd></div>
+      <div><dt>Gas</dt><dd>${esc(c.gas)}</dd></div>
+      <div><dt>Deposit</dt><dd>${esc(c.deposit)}</dd></div>
+      ${c.commitment ? `<div><dt>Case commitment</dt><dd class="mono">${esc(c.commitment)}</dd></div>` : ""}
+      ${c.nonce ? `<div><dt>Nonce</dt><dd class="mono">${esc(c.nonce)}</dd></div>` : ""}
+      ${c.receiptId != null ? `<div><dt>Receipt</dt><dd class="mono">${esc(String(c.receiptId))}</dd></div>` : ""}
+      ${c.resultHash ? `<div><dt>Result hash</dt><dd class="mono">${esc(c.resultHash)}</dd></div>` : ""}
+    </dl>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" type="button" id="events-consent-ok"${state.eventsBusy ? " disabled" : ""}>Approve and open wallet</button>
+      <button class="btn" type="button" id="events-consent-cancel"${state.eventsBusy ? " disabled" : ""}>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function verifyResultHtml() {
+  const v = state.verify;
+  if (!v) return "";
+  if (v.unable || typeof v.evidence_commitment !== "boolean") {
+    return `<p class="lede">Unable to verify${v.error ? ": " + esc(v.error) : ""}</p>`;
+  }
+  return v.evidence_commitment
+    ? `<p class="recd">Match</p>`
+    : `<p class="lede">Mismatch</p>`;
+}
+
 function viewCases() {
   const w = state.walk;
   const holds = holdReceipts(state.status);
@@ -563,10 +615,17 @@ function viewCases() {
     crumb("Cases"),
     null,
     `<div class="hd"><div><h1>Cases</h1><p class="lede">The case is the home. Live receipts from testnet are listed below.</p></div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn primary" type="button" id="new-case">${svg("plus", 17, 2.4)}New case</button>
         <a class="btn" href="#/analyze">${svg("list", 17)}Analyze evidence</a>
+        ${
+          eventsEnabled(state.status)
+            ? `<button class="btn" type="button" id="start-case-near">Start case on NEAR (optional)</button>`
+            : ""
+        }
       </div></div>
+    ${state.eventsMsg ? `<p class="lede">${esc(state.eventsMsg)}</p>` : ""}
+    ${eventsConsentHtml()}
     ${caseForm}
     <div class="kpis">
       <a class="kpi hold" href="#/approvals"><div class="kh"><span class="ki">${svg("hold", 17)}</span>Waiting for approval</div><div class="kv">${pending.length}</div><div class="ks">${
@@ -765,16 +824,15 @@ function viewReceipt() {
       <label class="dl">Original file</label><input type="file" name="file" required />
       <label class="dl">Salt (hex)</label><input class="hash" name="salt" value="${state.walk.salt || state.sampleSalt || ""}" placeholder="64 hex chars" style="width:100%;height:36px;border:1px solid var(--t);border-radius:8px;padding:0 10px" />
       <button class="btn" type="submit">${svg("shieldok", 16)}Verify from chain</button>
+      ${verifyResultHtml()}
       ${
-        state.verify
-          ? `<p class="${state.verify.evidence_commitment ? "recd" : ""}" style="color:${
-              state.verify.evidence_commitment ? "var(--bh)" : "var(--w)"
-            }">${state.verify.evidence_commitment ? "Match" : "Mismatch"} · expected ${shortHash(
-              state.verify.expected
-            )} · found ${shortHash(state.verify.found)}</p>`
+        eventsEnabled(state.status) && state.verify && !state.verify.unable && typeof state.verify.evidence_commitment === "boolean"
+          ? `<button class="btn" type="button" id="attest-verify">Record my verification attestation</button>`
           : ""
       }
-    </form>`
+      ${state.eventsMsg && state.view === "receipt" ? `<p class="lede">${esc(state.eventsMsg)}</p>` : ""}
+    </form>
+    ${eventsConsentHtml()}`
   );
 }
 
@@ -1510,6 +1568,130 @@ async function commitFile(file, source) {
   render();
 }
 
+async function runConsentedEvent() {
+  const c = state.eventsConsent;
+  if (!c || state.eventsBusy) return;
+  const signer = await liveSigner();
+  if (!signer) {
+    state.eventsMsg = "Connect an investigator wallet first.";
+    render();
+    return;
+  }
+  state.eventsBusy = true;
+  render();
+  try {
+    const receiverId = eventsContractId(state.status);
+    let sent;
+    if (c.prep.kind === "start_case") {
+      ({ sent } = await sendStartCase({ receiverId, prep: c.prep }));
+    } else {
+      ({ sent } = await sendAttest({ receiverId, prep: c.prep }));
+    }
+    const hash = txHashOf(sent);
+    const finalOk = outcomeFinalSuccess(sent);
+    const evOk = matchingEvent(sent, c.prep.kind);
+    if (finalOk && evOk) {
+      savePending(null);
+      state.eventsMsg = c.prep.kind === "start_case"
+        ? `Case start recorded. Transaction ${hash || "-"}.`
+        : `Verification attestation recorded. Transaction ${hash || "-"}.`;
+      state.eventsConsent = null;
+    } else if (hash && !finalOk) {
+      state.eventsMsg = `Transaction ${hash} is not FINAL yet. Reconcile this pending nonce. A hash alone is not success.`;
+    } else if (finalOk && !evOk) {
+      state.eventsMsg = `Transaction ${hash || "-"} finalized without the matching event. Reconcile. Do not retry with a new nonce until this record is checked.`;
+    } else {
+      state.eventsMsg = "Wallet returned no FINAL success. Local case is unchanged.";
+    }
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (/user reject|cancelled|denied/i.test(msg)) {
+      state.eventsMsg = "Wallet cancelled. Local case is unchanged.";
+    } else {
+      state.eventsMsg = msg;
+    }
+  }
+  state.eventsBusy = false;
+  render();
+}
+
+function bindWalletEvents() {
+  const startBtn = document.getElementById("start-case-near");
+  if (startBtn) {
+    startBtn.onclick = async () => {
+      if (state.eventsBusy) return;
+      if (!eventsEnabled(state.status)) return;
+      const signer = await liveSigner();
+      if (!signer) {
+        state.eventsMsg = "Connect an investigator wallet first.";
+        render();
+        return;
+      }
+      const caseId = state.walk.caseId || "larkmoor-demo";
+      const prep = await prepareStartCase(caseId);
+      state.eventsConsent = {
+        ...consentCopy("start_case", {
+          receiverId: eventsContractId(state.status),
+          methodName: "start_case",
+          commitment: prep.commitment,
+          nonce: prep.nonce,
+        }),
+        prep,
+      };
+      state.eventsMsg = "";
+      render();
+    };
+  }
+  const attestBtn = document.getElementById("attest-verify");
+  if (attestBtn) {
+    attestBtn.onclick = async () => {
+      if (state.eventsBusy) return;
+      const v = state.verify;
+      if (!v || v.unable || typeof v.evidence_commitment !== "boolean") return;
+      const signer = await liveSigner();
+      if (!signer) {
+        state.eventsMsg = "Connect an investigator wallet first.";
+        render();
+        return;
+      }
+      const resultHash = await resultReportHash({
+        receiptId: v.id,
+        matched: v.evidence_commitment,
+        expected: v.expected,
+        found: v.found,
+      });
+      const prep = await prepareAttest({
+        caseId: state.walk.caseId || "larkmoor-demo",
+        receiptId: v.id,
+        resultHash,
+      });
+      state.eventsConsent = {
+        ...consentCopy("attest_verification", {
+          receiverId: eventsContractId(state.status),
+          methodName: "attest_verification",
+          nonce: prep.nonce,
+          receiptId: prep.receiptId,
+          resultHash,
+        }),
+        prep,
+      };
+      state.eventsMsg = "";
+      render();
+    };
+  }
+  const ok = document.getElementById("events-consent-ok");
+  if (ok) ok.onclick = () => runConsentedEvent();
+  const cancel = document.getElementById("events-consent-cancel");
+  if (cancel) {
+    cancel.onclick = () => {
+      if (state.eventsBusy) return;
+      state.eventsConsent = null;
+      state.eventsMsg = "Signing cancelled. Local case is unchanged.";
+      render();
+    };
+  }
+}
+
 function bind() {
   document.querySelectorAll("[data-copy]").forEach((b) => {
     b.onclick = async () => {
@@ -1635,8 +1817,8 @@ function bind() {
       for (let i = 0; i < buf.length; i += 0x8000) {
         b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000));
       }
-      const data = await (
-        await fetch("/api/verify", {
+      try {
+        const res = await fetch("/api/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1644,12 +1826,20 @@ function bind() {
             salt,
             file_b64: btoa(b64),
           }),
-        })
-      ).json();
-      state.verify = data;
+        });
+        const data = await res.json().catch(() => ({ unable: true, error: "malformed response" }));
+        if (!res.ok || data.unable || typeof data.evidence_commitment !== "boolean") {
+          state.verify = { unable: true, error: data.error || `HTTP ${res.status}` };
+        } else {
+          state.verify = data;
+        }
+      } catch (err) {
+        state.verify = { unable: true, error: String(err.message || err) };
+      }
       render();
     };
   }
+  bindWalletEvents();
   const drop = document.getElementById("custody-drop");
   if (drop) {
     drop.file.onchange = async () => {
