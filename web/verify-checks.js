@@ -189,12 +189,63 @@ export function overallVerification(checks, analyze = {}) {
   return "incomplete";
 }
 
+export function fromAnalyzeTransportFailure({ kind, error, tx = null, checks = null } = {}) {
+  const msg = error?.message || String(error || kind || "transport failure");
+  return {
+    done: true,
+    error: msg,
+    skip_chain: false,
+    skipChain: false,
+    code: "ANALYSIS_OUTCOME_UNKNOWN",
+    execution: "unknown",
+    client_outcome: kind || "unknown",
+    tx: tx || null,
+    checks: checks || emptyChecks(),
+  };
+}
+
+export function fromAnalyzeHttp({ ok, status, data, parseError, tx = null, checks = null } = {}) {
+  if (parseError) {
+    return fromAnalyzeTransportFailure({
+      kind: "invalid_json",
+      error: parseError,
+      tx,
+      checks,
+    });
+  }
+  if (!ok) {
+    const payload = data && typeof data === "object" ? data : {};
+    return {
+      done: true,
+      error: payload.error || `HTTP ${status}`,
+      skip_chain: payload.skip_chain === true,
+      skipChain: payload.skip_chain === true,
+      code: payload.code || "HTTP_ERROR",
+      execution: payload.execution || null,
+      tx: payload.tx || tx || null,
+      checks: payload.checks || checks || emptyChecks(),
+    };
+  }
+  return { done: true, ...data, skip_chain: data?.skip_chain === true, skipChain: data?.skip_chain === true };
+}
+
 export function errorCopy(analyze) {
   if (!analyze || (!analyze.error && analyze.overall !== "failed" && !analyze.code)) return null;
   const tx = analyze.tx || analyze.checks?.recording?.evidence?.tx || null;
   const execution = analyze.execution || null;
   const skipChain = analyze.skip_chain ?? analyze.skipChain ?? true;
   const code = analyze.code;
+  if (code === "ANALYSIS_OUTCOME_UNKNOWN") {
+    return {
+      chip: "Unable to verify",
+      headline: "Analysis outcome unknown; a receipt may exist.",
+      body: [tx ? `Transaction ${tx}.` : null, "Do not automatically resubmit."]
+        .filter(Boolean)
+        .join(" "),
+      skipChain: false,
+      tx,
+    };
+  }
   if (execution === "failure") {
     return {
       chip: "Unable to verify",

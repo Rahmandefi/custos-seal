@@ -36,7 +36,7 @@ import {
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
-import { panelView, freshAnalyzeState, errorCopy } from "./verify-checks.js?v=__ASSET_V__";
+import { panelView, freshAnalyzeState, errorCopy, fromAnalyzeTransportFailure, fromAnalyzeHttp } from "./verify-checks.js?v=__ASSET_V__";
 import {
   eventsEnabled,
   eventsContractId,
@@ -1781,19 +1781,30 @@ function bind() {
           headers: writeHeaders({ "Content-Type": "application/octet-stream", "X-Case-Id": "larkmoor-demo" }),
           body: await file.arrayBuffer(),
         });
-        const data = await res.json();
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          state.analyze = fromAnalyzeTransportFailure({
+            kind: "invalid_json",
+            error: parseErr,
+            tx: state.analyze?.tx || null,
+            checks: state.analyze?.checks,
+          });
+          state.walk.analyzeError = state.analyze.error;
+          persistWalk();
+          render();
+          return;
+        }
         if (!res.ok) {
-          state.analyze = {
-            done: true,
-            error: writeFailMsg(data, res.status),
-            skip_chain: data.skip_chain,
-            checks: data.checks || state.analyze.checks,
-            tx: data.tx || null,
-            code: data.code || null,
-            execution: data.execution || null,
-          };
+          state.analyze = fromAnalyzeHttp({
+            ok: false,
+            status: res.status,
+            data,
+            tx: data?.tx || state.analyze?.tx || null,
+            checks: data?.checks || state.analyze.checks,
+          });
           state.walk.analyzeError = writeFailMsg(data, res.status);
-          state.walk.receiptId = null;
           persistWalk();
         } else {
           state.analyze = { done: true, ...data };
@@ -1806,11 +1817,14 @@ function bind() {
           return;
         }
       } catch (err) {
-        state.analyze = {
-          done: true,
-          error: String(err.message),
+        const timeout = err?.name === "AbortError" || /timeout/i.test(String(err.message || err));
+        state.analyze = fromAnalyzeTransportFailure({
+          kind: timeout ? "timeout" : "network",
+          error: err,
+          tx: state.analyze?.tx || null,
           checks: state.analyze?.checks,
-        };
+        });
+        state.walk.analyzeError = state.analyze.error;
       }
       render();
     };

@@ -14,6 +14,8 @@ import {
   freshAnalyzeState,
   txExecutionState,
   errorCopy,
+  fromAnalyzeTransportFailure,
+  fromAnalyzeHttp,
 } from "../web/verify-checks.js";
 
 const evidenceText =
@@ -697,4 +699,69 @@ test("Verified panel truthfulness regression: missing status never passes Record
     assert.match(copy.body, /ok-tx/);
   });
 });
+
+function assertUnknownOutcome(analyze) {
+  const copy = errorCopy(analyze);
+  const view = panelView(analyze);
+  assert.equal(analyze.skip_chain, false);
+  assert.equal(analyze.skipChain, false);
+  assert.equal(analyze.code, "ANALYSIS_OUTCOME_UNKNOWN");
+  assert.equal(view.chip, "Unable to verify");
+  assert.equal(copy.headline, "Analysis outcome unknown; a receipt may exist.");
+  assert.match(copy.body, /Do not automatically resubmit/);
+  assert.ok(!/The contract was not called/.test(copy.body || ""));
+  assert.ok(!/The contract was not called/.test(copy.headline || ""));
+  assert.ok(!view.rows.some((r) => r.status === "fail"));
+}
+
+test("Verified panel truthfulness regression: analyze network error is outcome unknown", () => {
+  const analyze = fromAnalyzeTransportFailure({
+    kind: "network",
+    error: new TypeError("Failed to fetch"),
+    checks: emptyChecks(),
+  });
+  assert.equal(analyze.client_outcome, "network");
+  assertUnknownOutcome(analyze);
+  assert.equal(analyze.tx, null);
+});
+
+test("Verified panel truthfulness regression: analyze timeout is outcome unknown", () => {
+  const err = new Error("The operation was aborted");
+  err.name = "AbortError";
+  const analyze = fromAnalyzeTransportFailure({
+    kind: "timeout",
+    error: err,
+    tx: "known-tx",
+    checks: emptyChecks(),
+  });
+  assert.equal(analyze.client_outcome, "timeout");
+  assert.equal(analyze.tx, "known-tx");
+  assertUnknownOutcome(analyze);
+  assert.match(errorCopy(analyze).body, /known-tx/);
+});
+
+test("Verified panel truthfulness regression: analyze invalid JSON is outcome unknown", () => {
+  const analyze = fromAnalyzeHttp({
+    ok: true,
+    status: 200,
+    parseError: new SyntaxError("Unexpected token < in JSON"),
+    tx: null,
+    checks: emptyChecks(),
+  });
+  assert.equal(analyze.client_outcome, "invalid_json");
+  assertUnknownOutcome(analyze);
+});
+
+test("Verified panel truthfulness regression: HTTP error without skip_chain does not infer contract skipped", () => {
+  const analyze = fromAnalyzeHttp({
+    ok: false,
+    status: 502,
+    data: { error: "bad gateway" },
+    checks: emptyChecks(),
+  });
+  assert.equal(analyze.skip_chain, false);
+  const copy = errorCopy(analyze);
+  assert.ok(!/The contract was not called/.test(copy.body || ""));
+});
+
 
