@@ -20,7 +20,7 @@ export function defaultSetup() {
     commitment: "",
     caseName: "Larkmoor Records Office",
     caseDesc: "File-transfer breach",
-    caseId: "larkmoor-demo",
+    caseId: "",
     highlightAnalyze: false,
   };
 }

@@ -34,7 +34,7 @@ export function defaultWalk() {
     connected: false,
     caseName: "",
     caseDesc: "",
-    caseId: "larkmoor-demo",
+    caseId: "",
     evidenceName: "",
     evidenceText: "",
     salt: "",

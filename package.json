@@ -16,6 +16,7 @@
     "test:analyze-log": "node --test src/analyze-log.test.mjs",
     "test:writer-allowance": "node --test src/writer-allowance.test.mjs",
     "test:writer-identity": "node --test src/writer-identity.test.mjs",
+    "test:session-scope": "node --test src/session-scope.test.mjs src/session-http.test.mjs web/cases.test.mjs",
     "test:contract": "cargo test --manifest-path contracts/custody/Cargo.toml --offline -- --test-threads=1",
     "analyze": "node scripts/analyze.mjs",
     "verify-from-chain": "node scripts/verify-from-chain.mjs",

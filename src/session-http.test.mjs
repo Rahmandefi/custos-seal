@@ -1,0 +1,88 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { SAMPLE_CASE_ID } from "./session-scope.mjs";
+
+process.env.VERCEL = process.env.VERCEL || "1";
+process.env.DEMO_MODE = "1";
+
+const { handleRequest } = await import("../scripts/server.mjs");
+
+function listen() {
+  const server = createServer(handleRequest);
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      resolve({ server, port });
+    });
+  });
+}
+
+async function call(port, path, { method = "GET", headers = {}, body } = {}) {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body });
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = { _text: text };
+  }
+  return { status: res.status, json };
+}
+
+test("POST /analyze against larkmoor-demo is refused before chain write", async () => {
+  const { server, port } = await listen();
+  try {
+    const out = await call(port, "/analyze", {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-case-id": SAMPLE_CASE_ID,
+      },
+      body: "sample-bytes",
+    });
+    assert.equal(out.status, 403);
+    assert.equal(out.json.code, "SAMPLE_READONLY");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/status without case ids has no foreign hex cases", async () => {
+  const { server, port } = await listen();
+  try {
+    const out = await call(port, "/api/status");
+    assert.equal(out.status, 200);
+    const foreign = (out.json.receipts || []).filter((r) => r.case_id && r.case_id !== SAMPLE_CASE_ID);
+    assert.equal(foreign.length, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/status with B ids does not include A hex case", async () => {
+  const { server, port } = await listen();
+  try {
+    const a = "a".repeat(32);
+    const b = "b".repeat(32);
+    const out = await call(port, "/api/status", { headers: { "x-custos-case-ids": b } });
+    assert.equal(
+      (out.json.receipts || []).some((r) => String(r.case_id).toLowerCase() === a),
+      false
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/receipt for a missing id is 404", async () => {
+  const { server, port } = await listen();
+  try {
+    const out = await call(port, "/api/receipt/999999", {
+      headers: { "x-custos-case-ids": "b".repeat(32) },
+    });
+    assert.equal(out.status, 404);
+  } finally {
+    server.close();
+  }
+});

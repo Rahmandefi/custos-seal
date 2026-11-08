@@ -52,6 +52,13 @@ import {
   outcomeFinalSuccess,
   matchingEvent,
 } from "./wallet-events.js?v=__ASSET_V__";
+import {
+  loadCases,
+  saveCases,
+  addCase,
+  newCaseId,
+  callerCaseIds,
+} from "./cases.js?v=__ASSET_V__";
 
 const P = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
@@ -97,6 +104,7 @@ const state = {
   exportMsg: null,
   exportLoading: false,
   walk: loadWalk(),
+  cases: loadCases(),
   setup: loadSetup(),
   wallet: loadWallet(),
   menuOpen: false,
@@ -121,6 +129,48 @@ function persistWalk() {
   saveWalk(state.walk);
 }
 
+function persistCases() {
+  saveCases(state.cases);
+}
+
+function caseIdHeader() {
+  return callerCaseIds(state.cases).join(",");
+}
+
+function isOperatorUi() {
+  return Boolean(sessionStorage.getItem("custos-write-token"));
+}
+
+function createLocalCase({ name, desc, fromSample } = {}) {
+  const id = newCaseId();
+  state.cases = addCase(state.cases, {
+    id,
+    name: name || "Untitled case",
+    desc: desc || "",
+    fromSample: !!fromSample,
+  });
+  state.walk.caseId = id;
+  state.walk.caseName = name || "Untitled case";
+  state.walk.caseDesc = desc || "";
+  persistWalk();
+  return id;
+}
+
+async function loadSampleIncident() {
+  createLocalCase({
+    name: "Sample incident (FICTIONAL)",
+    desc: "Training sample copied into a new case",
+    fromSample: true,
+  });
+  const s = await (await fetch("/api/sample?kind=hold")).json();
+  state.sampleText = s.text || "";
+  if (s.salt) state.sampleSalt = s.salt;
+  const blob = new Blob([s.text], { type: "text/plain" });
+  const file = new File([blob], s.name, { type: "text/plain" });
+  await commitFile(file, "sample");
+  location.hash = "#/workspace";
+}
+
 function persistSetup() {
   saveSetup(state.setup);
 }
@@ -136,6 +186,7 @@ function setupOpen() {
 
 function route() {
   state.walk = loadWalk();
+  state.cases = loadCases();
   state.setup = loadSetup();
   state.wallet = loadWallet();
   let h = location.hash.replace(/^#\/?/, "");
@@ -166,7 +217,7 @@ let statusOnce = false;
 async function loadStatus() {
   state.statusLoading = true;
   try {
-    state.status = await (await fetch("/api/status")).json();
+    state.status = await (await fetch("/api/status", { headers: writeHeaders() })).json();
     state.statusLoading = false;
   } catch (e) {
     state.error = String(e.message);
@@ -180,7 +231,7 @@ const receiptReq = {};
 function getReceipt(id) {
   id = Number(id);
   if (!receiptReq[id]) {
-    receiptReq[id] = fetch(`/api/receipt/${id}`)
+    receiptReq[id] = fetch(`/api/receipt/${id}`, { headers: writeHeaders() })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         state.receipts[id] = d;
@@ -208,6 +259,8 @@ function writeHeaders(extra = {}) {
   const t = sessionStorage.getItem("custos-write-token") || "";
   const h = { ...extra };
   if (t) h.Authorization = `Bearer ${t}`;
+  const ids = caseIdHeader();
+  if (ids) h["X-Custos-Case-Ids"] = ids;
   return h;
 }
 
@@ -332,7 +385,7 @@ function tree(active) {
   const n = state.statusLoading ? "…" : state.status?.receipt_count ?? "-";
   const q = (state.filterQ || "").toLowerCase();
   const items = [
-    ["cases", "folder", "All cases", "#/cases", "1", ""],
+    ["cases", "folder", "All cases", "#/cases", String(state.cases.list.length || (isOperatorUi() ? state.status?.receipt_count || 0 : 0)), ""],
     ["approvals", "hold", "Approvals", "#/approvals", String(pendingHolds(state.status).length || ""), "hold"],
     ["access", "users", "Access", "#/access", "", ""],
     ["workspace", "file", "Evidence files", "#/workspace", state.walk.evidenceName ? "1" : "", ""],
@@ -531,8 +584,8 @@ function viewLand() {
         ${BAR.map((b) => `<li><span>${b.n}</span> ${b.label}</li>`).join("")}
       </ol>
       <div class="land-acts">
-        <button class="btn primary" type="button" id="land-new">${svg("plus", 17)}Start a new case</button>
-        <button class="btn" type="button" id="land-sample">${svg("file", 17)}Try the sample case</button>
+        <button class="btn primary" type="button" id="land-new">${svg("plus", 17)}Create case</button>
+        <button class="btn" type="button" id="land-sample">${svg("file", 17)}Load sample incident (FICTIONAL)</button>
         <a class="btn" href="#/receipt" id="land-verify">${svg("link", 17)}Verify a receipt</a>
       </div>
     </div>
@@ -575,6 +628,19 @@ function verifyResultHtml() {
 
 function viewCases() {
   const w = state.walk;
+  const mine = state.cases.list.length;
+  if (!mine && !isOperatorUi()) {
+    return shell(
+      "cases",
+      crumb("Cases"),
+      null,
+      `<div class="hd"><div><h1>Cases</h1><p class="lede">This browser has no cases yet. Nothing from other visitors is shown.</p></div></div>
+      <div class="land-acts" style="padding:0 0 16px">
+        <button class="btn primary" type="button" id="new-case">${svg("plus", 17)}Create case</button>
+        <button class="btn" type="button" id="load-sample">${svg("file", 17)}Load sample incident (FICTIONAL)</button>
+      </div>`
+    );
+  }
   const holds = holdReceipts(state.status);
   const pending = pendingHolds(state.status);
   const decidedN = holds.length - pending.length;
@@ -610,7 +676,7 @@ function viewCases() {
     null,
     `<div class="hd"><div><h1>Cases</h1><p class="lede">The case is the home. Live receipts from testnet are listed below.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn primary" type="button" id="new-case">${svg("plus", 17, 2.4)}New case</button>
+        <button class="btn primary" type="button" id="new-case">${svg("plus", 17, 2.4)}Create case</button>
         <a class="btn" href="#/analyze">${svg("list", 17)}Analyze evidence</a>
         ${
           eventsEnabled(state.status)
@@ -627,7 +693,7 @@ function viewCases() {
       }</div></a>
       <a class="kpi block" href="#/custody"><div class="kh"><span class="ki">${svg("shieldx", 17)}</span>Custody checks</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "CustodyCheck").length}</div><div class="ks">From the custody log</div></a>
       <a class="kpi flag" href="#/finding"><div class="kh"><span class="ki">${svg("flag", 17)}</span>Findings</div><div class="kv">${(state.status?.receipts || []).filter((r) => kindLabel(r.kind) === "Finding").length}</div><div class="ks">On-chain Finding receipts</div></a>
-      <a class="kpi neutral" href="#/workspace"><div class="kh"><span class="ki">${svg("folder", 17)}</span>Open cases</div><div class="kv">1</div><div class="ks">Larkmoor Records Office</div></a>
+      <a class="kpi neutral" href="#/workspace"><div class="kh"><span class="ki">${svg("folder", 17)}</span>Open cases</div><div class="kv">${mine}</div><div class="ks">${mine === 1 ? (state.cases.list[0]?.name || "1 case") : `${mine} in this browser`}</div></a>
     </div>
     <div class="card tbl" data-tour-id="viewCustody"><div class="tbar"><h2>Custody log</h2><span class="cnt">${state.statusLoading ? "…" : state.status?.receipt_count ?? 0}</span></div>
     <table><thead><tr><th>Id</th><th>Kind</th><th>Case</th><th>Verdict</th><th>Actor</th><th></th></tr></thead>
@@ -1057,7 +1123,7 @@ function viewAccess() {
 function viewReports() {
   if (!state.exportData && !state.exportLoading) {
     state.exportLoading = true;
-    fetch("/api/export")
+    fetch("/api/export", { headers: writeHeaders() })
       .then((r) => r.json())
       .then((d) => { state.exportData = d; })
       .catch((e) => { state.exportMsg = `Could not load the export: ${e.message}`; })
@@ -1414,11 +1480,8 @@ function bindSetup() {
   const nc = document.getElementById("new-case");
   if (nc) {
     nc.onclick = () => {
-      state.setup = { ...defaultSetup() };
-      persistSetup();
-      location.hash = "#/setup";
-      state.view = "setup";
-      render();
+      createLocalCase({ name: "Untitled case" });
+      location.hash = "#/workspace";
     };
   }
 }
@@ -1428,23 +1491,14 @@ function bindWalk() {
   const landNew = document.getElementById("land-new");
   if (landNew) {
     landNew.onclick = () => {
-      state.walk = { ...defaultWalk(), step: "connect" };
-      persistWalk();
-      goWalk("connect");
+      createLocalCase({ name: "Untitled case" });
+      location.hash = "#/workspace";
     };
   }
   const landSample = document.getElementById("land-sample");
   if (landSample) {
     landSample.onclick = async () => {
-      state.walk = {
-        ...defaultWalk(),
-        step: "connect",
-        caseName: "Larkmoor Records Office",
-        caseDesc: "File-transfer breach",
-        caseId: "larkmoor-demo",
-      };
-      persistWalk();
-      goWalk("connect");
+      await loadSampleIncident();
     };
   }
   const landVerify = document.getElementById("land-verify");
@@ -1631,7 +1685,7 @@ function bindWalletEvents() {
         render();
         return;
       }
-      const caseId = state.walk.caseId || "larkmoor-demo";
+      const caseId = state.walk.caseId || state.cases.currentId;
       const prep = await prepareStartCase(caseId);
       state.eventsConsent = {
         ...consentCopy("start_case", {
@@ -1665,7 +1719,7 @@ function bindWalletEvents() {
         found: v.found,
       });
       const prep = await prepareAttest({
-        caseId: state.walk.caseId || "larkmoor-demo",
+        caseId: state.walk.caseId || state.cases.currentId,
         receiptId: v.id,
         resultHash,
       });
@@ -1759,12 +1813,7 @@ function bind() {
   const ls = document.getElementById("load-sample");
   if (ls) {
     ls.onclick = async () => {
-      const s = await (await fetch("/api/sample?kind=hold")).json();
-      state.sampleText = s.text || "";
-      if (s.salt) state.sampleSalt = s.salt;
-      const blob = new Blob([s.text], { type: "text/plain" });
-      const file = new File([blob], s.name, { type: "text/plain" });
-      await commitFile(file, "sample");
+      await loadSampleIncident();
     };
   }
   const af = document.getElementById("analyze-form");
@@ -1778,7 +1827,10 @@ function bind() {
       try {
         const res = await fetch("/analyze", {
           method: "POST",
-          headers: writeHeaders({ "Content-Type": "application/octet-stream", "X-Case-Id": "larkmoor-demo" }),
+          headers: writeHeaders({
+            "Content-Type": "application/octet-stream",
+            "X-Case-Id": state.walk.caseId || state.cases.currentId || "",
+          }),
           body: await file.arrayBuffer(),
         });
         let data = null;
@@ -1897,7 +1949,7 @@ function bind() {
     gf.onsubmit = async (e) => {
       e.preventDefault();
       const account = gf.account.value.trim();
-      const case_id = state.walk.caseId || "larkmoor-demo";
+      const case_id = state.walk.caseId || state.cases.currentId;
       try {
         if (state.wallet.connected) {
           const sent = await signFunctionCall({
@@ -1929,7 +1981,7 @@ function bind() {
     of.onsubmit = async (e) => {
       e.preventDefault();
       const args = {
-        case_id: state.walk.caseId || "larkmoor-demo",
+        case_id: state.walk.caseId || state.cases.currentId,
         evidence_id: "E1",
         reason: of.account_note.value || "walkthrough open",
       };
@@ -1968,7 +2020,7 @@ function bind() {
             receiverId: state.status?.contract || "ftcust15e434.testnet",
             methodName: "approve_action",
             args: {
-              case_id: "larkmoor-demo",
+              case_id: state.walk.caseId || state.cases.currentId,
               receipt_id: Number(hf.dataset.id),
               decision: decision === "approve",
               reason,
@@ -1980,7 +2032,7 @@ function bind() {
             method: "POST",
             headers: writeHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({
-              case_id: "larkmoor-demo",
+              case_id: state.walk.caseId || state.cases.currentId,
               receipt_id: Number(hf.dataset.id),
               decision,
               reason,
@@ -2003,7 +2055,7 @@ function bind() {
       e.preventDefault();
       const fd = new FormData(cf);
       const body = {
-        case_id: "larkmoor-demo",
+        case_id: state.walk.caseId || state.cases.currentId,
         expected_receipt_id: Number(fd.get("expected_receipt_id")),
         evidence_commitment: fd.get("evidence_commitment") || state.custodyMsg?.commitment,
         matched: Boolean(state.custodyMsg?.ok),
@@ -2036,7 +2088,7 @@ function bind() {
   const ex = document.getElementById("export-json");
   if (ex) {
     ex.onclick = async () => {
-      const data = await (await fetch("/api/export")).json();
+      const data = await (await fetch("/api/export", { headers: writeHeaders() })).json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -2052,7 +2104,7 @@ function bind() {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 30000);
       try {
-        const res = await fetch("/api/export.pdf", { signal: ctl.signal });
+        const res = await fetch("/api/export.pdf", { signal: ctl.signal, headers: writeHeaders() });
         const type = res.headers.get("content-type") || "";
         if (!res.ok || !type.includes("application/pdf")) {
           let msg = `HTTP ${res.status}`;

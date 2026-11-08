@@ -28,6 +28,14 @@ import { runAttack } from "../src/attacks.mjs";
 import { evidenceCommitment, hexToBytes, newSalt } from "../src/commit.mjs";
 import { buildExport, rememberTx, loadTxIndex } from "../src/export.mjs";
 import { renderPdf } from "../src/render-pdf.mjs";
+import {
+  SAMPLE_CASE_ID,
+  CASE_IDS_HEADER,
+  parseCaseIdsHeader,
+  isOperatorRequest,
+  filterReceipts,
+  sampleWriteBlocked,
+} from "../src/session-scope.mjs";
 
 
 await loadEnv();
@@ -61,9 +69,9 @@ const MIME = {
   ".json": "application/json",
 };
 
-let statusCache = { at: 0, body: null };
+let statusCache = { at: 0, key: "", body: null };
 function invalidateStatus() {
-  statusCache = { at: 0, body: null };
+  statusCache = { at: 0, key: "", body: null };
 }
 
 const demoHits = new Map();
@@ -121,19 +129,59 @@ function summarizeReceipt(r) {
   };
 }
 
-async function statusPayload() {
-  if (statusCache.body && Date.now() - statusCache.at < 12000) return statusCache.body;
+function callerScope(req) {
+  const operator = isOperatorRequest(req);
+  const ids = parseCaseIdsHeader(req.headers?.[CASE_IDS_HEADER] || req.headers?.["X-Custos-Case-Ids"]);
+  return { operator, ids };
+}
+
+function rejectSampleWrite(res, caseId) {
+  if (!sampleWriteBlocked(caseId)) return false;
+  json(res, 403, { error: "sample case is read-only", code: "SAMPLE_READONLY" });
+  return true;
+}
+
+async function scopedExport(req) {
+  const raw = await buildExport(OUT);
+  const scope = callerScope(req || {});
+  const receipts = filterReceipts(raw.receipts || [], scope.ids, scope.operator);
+  const ids = new Set(receipts.map((r) => Number(r.id)));
+  return {
+    ...raw,
+    receipts,
+    timeline: (raw.timeline || []).filter((r) => ids.has(Number(r.id))),
+    findings: (raw.findings || []).filter((r) => ids.has(Number(r.receipt_id))),
+    approvals: (raw.approvals || []).filter((r) => ids.has(Number(r.id))),
+    access_log: (raw.access_log || []).filter((r) => ids.has(Number(r.id))),
+    summary: {
+      ...raw.summary,
+      receipt_count: receipts.length,
+      finding_count: receipts.filter((r) => r.kind === "Finding").length,
+    },
+  };
+}
+
+async function statusPayload(req) {
+  const scope = callerScope(req || {});
+  const cacheKey = scope.operator ? "op" : scope.ids.slice().sort().join(",") || "anon";
+  if (statusCache.body && statusCache.key === cacheKey && Date.now() - statusCache.at < 12000) {
+    return statusCache.body;
+  }
   const n = await receiptCount();
   const acct = await viewAccount(CONTRACT);
-  const receipts = [];
-  for (let i = 0; i < n; i++) receipts.push(summarizeReceipt(await getReceipt(i)));
+  const all = [];
+  for (let i = 0; i < n; i++) all.push(summarizeReceipt(await getReceipt(i)));
+  const receipts = filterReceipts(all, scope.ids, scope.operator);
   statusCache = {
     at: Date.now(),
+    key: cacheKey,
     body: {
       contract: CONTRACT,
       writer: WRITER,
       owner: OWNER,
-      receipt_count: n,
+      receipt_count: receipts.length,
+      chain_receipt_count: n,
+      sample_case_id: SAMPLE_CASE_ID,
       storage_usage: acct.storage_usage,
       receipts,
       wallet_events_contract: walletEventsContractId(),
@@ -198,6 +246,20 @@ async function handleAnalyze(req, forceHold, ctx) {
     err.stage = "parse";
     throw err;
   }
+  const caseId = String(req.headers["x-case-id"] || "").trim();
+  if (sampleWriteBlocked(caseId || SAMPLE_CASE_ID)) {
+    const err = new Error("sample case is read-only");
+    err.status = 403;
+    err.code = "SAMPLE_READONLY";
+    err.stage = "case";
+    throw err;
+  }
+  if (!/^[0-9a-f]{32}$/i.test(caseId)) {
+    const err = new Error("case id required");
+    err.status = 400;
+    err.stage = "case";
+    throw err;
+  }
   if (req.writeMode === "demo") {
     ctx.stage = "demo_sample";
     if (!(await sampleBytesMatch(evidenceBytes))) {
@@ -216,7 +278,7 @@ async function handleAnalyze(req, forceHold, ctx) {
   }
   return analyzeEvidence({
     evidenceBytes,
-    caseId: req.headers["x-case-id"] || "larkmoor-demo",
+    caseId,
     outDir: OUT,
     root: ROOT,
     apiKey,
@@ -273,6 +335,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "POST" && req.url === "/custody/hold") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id || SAMPLE_CASE_ID)) return;
       const reason = String(j.reason || "").trim();
       if (!reason) {
         json(res, 400, { error: "reason required" });
@@ -306,6 +369,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "POST" && req.url === "/custody/open") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id)) return;
       const sent = await callOwner(
         "request_open",
         {
@@ -321,6 +385,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "POST" && req.url === "/custody/check") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id)) return;
       const expectedId = Number(j.expected_receipt_id);
       const chain = await getReceipt(expectedId);
       let commitBuf;
@@ -350,17 +415,20 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "GET" && req.url === "/api/status") {
-      json(res, 200, await statusPayload());
+      json(res, 200, await statusPayload(req));
       return;
     }
     if (req.method === "GET" && req.url?.startsWith("/api/receipt/")) {
       const id = Number(req.url.split("/").pop());
       const rec = await getReceipt(id);
-      if (rec && typeof rec === "object") {
-        const idx = await loadTxIndex(OUT);
-        rec.tx = idx[id] || idx[String(id)] || rec.tx || null;
-        rec.explorer = rec.tx ? `https://testnet.nearblocks.io/txns/${rec.tx}` : null;
+      const scope = callerScope(req);
+      if (!rec || typeof rec !== "object" || !filterReceipts([rec], scope.ids, scope.operator).length) {
+        json(res, 404, { error: "not found" });
+        return;
       }
+      const idx = await loadTxIndex(OUT);
+      rec.tx = idx[id] || idx[String(id)] || rec.tx || null;
+      rec.explorer = rec.tx ? `https://testnet.nearblocks.io/txns/${rec.tx}` : null;
       json(res, 200, rec);
       return;
     }
@@ -401,7 +469,7 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "GET" && req.url === "/api/export") {
-      json(res, 200, await buildExport(OUT));
+      json(res, 200, await scopedExport(req));
       return;
     }
     if ((req.method === "GET" || req.method === "HEAD") && (pathOnly === "/api/export.pdf")) {
@@ -417,7 +485,7 @@ export async function handleRequest(req, res) {
       const withTimeout = (p, ms, code) =>
         Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(code)), ms))]);
       try {
-        const payload = await withTimeout(buildExport(OUT), 15000, "export_timeout");
+        const payload = await withTimeout(scopedExport(req), 15000, "export_timeout");
         const buf = await withTimeout(renderPdf(payload), 15000, "pdf_timeout");
         res.writeHead(200, {
           "Content-Type": "application/pdf",
@@ -460,6 +528,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "POST" && req.url === "/custody/grant") {
       const j = JSON.parse((await readBody(req)).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id)) return;
       const sent = await callOwner(
         "grant",
         { case_id: j.case_id, account: j.account },
