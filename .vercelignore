@@ -1,8 +1,15 @@
 node_modules
 .venv
 out
+out/
 contracts/*/target
 .git
 .env
+.env.*
 .env.local
+.near
+.near-credentials
+**/.near-credentials
+*.pem
+*.key
 *.wasm

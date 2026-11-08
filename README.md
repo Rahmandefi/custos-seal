@@ -7,7 +7,9 @@ Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). 
 ## Verify without an API key (screeners start here)
 
 ```bash
-# View-only (tested on Node 22+). Full demo: Node ≥ 24.22.1. No NEAR AI key. No wallet.
+git clone https://github.com/Rahmandefi/custos-seal.git
+cd custos-seal
+# View-only. Tested on Node 20.20.2 (also 22 and 24). No NEAR AI key. No wallet.
 npm ci
 npm run verify
 ```
@@ -100,7 +102,7 @@ Scoping is view isolation; the chain is public.
 
 ## Setup from scratch
 
-Recommended full-demo runtime: Node **≥ 24.22.1** (`@nearai/inference-sdk` 0.2.1 engines; use this for `verify-one` and `npm run server`). Node **22** is only for the tested view-only commands `npm run verify` and `npm run test:policy`. App `package.json` engines remain `>=22`. Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
+Node per command (tested): `npm run verify` and `npm run test:policy` on **Node 20.20.2**. `npm run verify-one` and `npm run server` need **Node ≥ 24.22.1** (`@nearai/inference-sdk` 0.2.1 `engines.node`). App `package.json` engines remain `>=22` for the hosted app. Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
 
 ```bash
 git clone https://github.com/Rahmandefi/custos-seal.git
@@ -149,7 +151,7 @@ Screens follow `docs/ui/SCREENS.md` and `docs/ui/DESIGN_NOTES.md`: dark icon rai
 
 ## Do X → see Y
 
-Recommended full-demo runtime: Node **≥ 24.22.1**. Node **22** is limited to view-only `npm run verify` and `npm run test:policy`.
+Node per command: `npm run verify` / `npm run test:policy` on Node **20.20.2**. `npm run verify-one` / `npm run server` on Node **≥ 24.22.1**.
 
 ```bash
 git clone https://github.com/Rahmandefi/custos-seal.git
@@ -232,27 +234,27 @@ npm run test:pipeline
 
 See: TCB / not `provider_tee` / citation mismatch / reused nonce / allowance 0 all throw `PipelineError` with `skipChain`; `receipt_count` unchanged.
 
-## Stack
+## Third-party libraries
 
-| Piece | Version |
-| --- | --- |
-| Node | Recommended full demo **≥ 24.22.1**. Node 22 is view-only (`verify`, `test:policy`). `package.json` engines `>=22`. |
-| `@nearai/inference-sdk` | 0.2.1 (Node entry; `engines.node` `>=24.22.1`) |
-| `near-api-js` | ^7.4.0 |
-| `pdf-lib` | ^1.17.1 |
-| `tweetnacl` | ^1.0.3 |
-| `dcap-qvl` | 0.7.1 (`requirements-verify.txt`) |
-| `near-sdk` | 5.30.0 (`contracts/custody/Cargo.toml`) |
-| `ed25519-dalek` | 2 (contract dev-dependency) |
-| Model | `z-ai/glm-5.3-flash` (canonical; not the GLM-5.1-FP8 alias) |
+Generated from `package.json`, `contracts/custody/Cargo.toml`, and `requirements-verify.txt`.
 
-npm dependencies: `@nearai/inference-sdk`, `near-api-js`, `pdf-lib`, `tweetnacl`. Python verify extra: `dcap-qvl`. Contract: `near-sdk` 5.30.0.
+| Source | Package | Version |
+| --- | --- | --- |
+| `package.json` | `@nearai/inference-sdk` | 0.2.1 (`engines.node` `>=24.22.1`) |
+| `package.json` | `near-api-js` | ^7.4.0 |
+| `package.json` | `pdf-lib` | ^1.17.1 |
+| `package.json` | `tweetnacl` | ^1.0.3 |
+| `contracts/custody/Cargo.toml` | `near-sdk` | 5.30.0 |
+| `contracts/custody/Cargo.toml` (dev) | `ed25519-dalek` | 2 |
+| `requirements-verify.txt` | `dcap-qvl` | 0.7.1 |
+
+Runtime (not a library): Node 20.20.2 for `npm run verify` / `npm run test:policy`; Node ≥ 24.22.1 for `verify-one` and `server`. Model id `z-ai/glm-5.3-flash`.
 
 ## Samples
 
 `samples/` is a **FICTIONAL SCENARIO** (City of Larkmoor Records Office). Not a real case.
 
-## Status (2026-11-05)
+## Status (2026-11-08)
 
 Day 1 live check (Confidential TEE, Ed25519, TCB UpToDate):
 
@@ -278,7 +280,7 @@ The API key is never in git. `.env` is gitignored, mode 600.
 - [x] `scripts/verify-from-chain.mjs`
 - [x] Fail-closed tests (no chain write)
 
-Testnet (2026-11-05):
+Testnet (2026-11-08): accounts unchanged since 2026-11-05.
 
 | Role | Account |
 | --- | --- |
@@ -292,9 +294,9 @@ Testnet (2026-11-05):
 - Receipt **1:** first real Finding (live TEE, salted evidence commitment, `Accept`): https://explorer.testnet.near.org/transactions/D9xgsYHF9KC2nEHx19mNsJVjJNjG395bT7p5GmbotLgZ
 - Receipts 2-5: Open, OpenDenied, CustodyCheck Accept, CustodyCheck Block (left unchanged)
 - Receipt **6:** salted `finding_hash`/`citation_hashes` from `samples/larkmoor-listing.txt`: https://explorer.testnet.near.org/transactions/CNVdjDYftBUYGXUSL5WezHuGzSMLjfG3DjER4VEaPQAj (storage +609 bytes)
-- Writer function-call key `ed25519:2f4coffNJB6iV9t7DdnByZNEETr1UXvvYhLfAGe5bevv` (receiver `ftcust15e434.testnet`, methods `record_finding` + `record_custody_check`)
+- Writer function-call keys on-chain (receiver `ftcust15e434.testnet`, methods `record_finding` + `record_custody_check`): `ed25519:2f4coffNJB6iV9t7DdnByZNEETr1UXvvYhLfAGe5bevv` and `ed25519:6Sq16qQU4WoiYoPjRxb1fjYbiv1ASJvEuUgzoKiDzcqS`
 - The writer's **full-access** key is kept **offline** (`~/.near-credentials/offline/`), not deleted. A NEAR account with only a function-call key and no remaining full-access key cannot add keys, delete keys, or recover; deleting the last full-access key locks the account. The offline key is the recovery path if the 0.25 NEAR allowance needs a top-up or the method list needs a change.
-- [ ] UI (wallet, Verified panel, citation highlight)
+- [x] UI (wallet connect, Verified panel from live `/analyze` checks, citation highlight, Recorded run, session isolation, demo cap)
 - [ ] Demo video
 
 ## License
