@@ -1035,6 +1035,7 @@ function viewSecurity() {
           <div><dt>Works only on</dt><dd class="mono" title="${esc(state.status?.contract || "")}">${esc(shortAccount(state.status?.contract || ""))}</dd></div>
           <div><dt>Can call</dt><dd><span class="mono tag">record_finding</span><span class="mono tag">record_custody_check</span></dd></div>
           <div><dt>Can't</dt><dd class="cant">Transfer NEAR · add or delete keys · call other contracts · attach deposits</dd></div>
+          <div><dt>Remaining allowance</dt><dd class="mono">${esc(state.status?.writer_allowance_near || "unknown")}</dd></div>
         </dl>
         <div class="wal">${svg("info", 16, 2.2)}<p><b>Your wallet key is different.</b> A stolen full-access key could move funds. The writer full-access key stays offline.</p></div>
       </section>

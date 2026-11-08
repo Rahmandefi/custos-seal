@@ -1,5 +1,6 @@
-/** Guided walkthrough. Progress in localStorage. Sample items stay FICTIONAL. */
+/** Guided walkthrough. Case IDs and commitments in localStorage; evidence bytes and salt in sessionStorage. */
 export const LS = "custos-walk";
+export const SESS = "custos-walk-ephemeral";
 
 export const BAR = [
   { id: "connect", n: 1, label: "Connect" },
@@ -49,14 +50,30 @@ export function defaultWalk() {
 
 export function loadWalk() {
   try {
-    return { ...defaultWalk(), ...JSON.parse(localStorage.getItem(LS) || "{}") };
+    const durable = JSON.parse(localStorage.getItem(LS) || "{}");
+    delete durable.evidenceText;
+    delete durable.salt;
+    let eph = {};
+    try {
+      eph = JSON.parse(sessionStorage.getItem(SESS) || "{}");
+    } catch {
+      eph = {};
+    }
+    return {
+      ...defaultWalk(),
+      ...durable,
+      evidenceText: eph.evidenceText || "",
+      salt: eph.salt || "",
+    };
   } catch {
     return defaultWalk();
   }
 }
 
 export function saveWalk(w) {
-  localStorage.setItem(LS, JSON.stringify(w));
+  const { evidenceText, salt, ...durable } = w;
+  localStorage.setItem(LS, JSON.stringify(durable));
+  sessionStorage.setItem(SESS, JSON.stringify({ evidenceText: evidenceText || "", salt: salt || "" }));
 }
 
 export function barIndex(step) {

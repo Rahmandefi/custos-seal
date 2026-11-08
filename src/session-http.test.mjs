@@ -115,6 +115,35 @@ test("B cannot read A's real receipt id via /api/receipt or /api/export", async 
   }
 });
 
+test("POST /analyze in demo mode returns 429 when hourly cap is hit", async () => {
+  const listing = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../samples/larkmoor-listing.txt", import.meta.url))
+  );
+  testHooks.demoCap = async () => ({
+    receipts: Array.from({ length: 13 }, () => ({
+      timestamp_ns: String(BigInt(Date.now()) * 1_000_000n),
+    })),
+    allowance: "100000000000000000000000",
+  });
+  const { server, port } = await listen();
+  try {
+    const out = await call(port, "/analyze", {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-case-id": "c".repeat(32),
+      },
+      body: listing,
+    });
+    assert.equal(out.status, 429);
+    assert.equal(out.json.code, "DEMO_LIMIT");
+    assert.match(String(out.json.error || out.json.message || ""), /demo limit reached; run npm run verify instead/);
+  } finally {
+    testHooks.demoCap = null;
+    server.close();
+  }
+});
+
 test("GET /api/receipt for a missing id is 404", async () => {
   const { server, port } = await listen();
   try {

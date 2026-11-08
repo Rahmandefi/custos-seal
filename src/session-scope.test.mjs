@@ -6,6 +6,7 @@ import {
   filterReceipts,
   isOperatorRequest,
   sampleWriteBlocked,
+  demoLimitReached,
 } from "./session-scope.mjs";
 
 const sample = { id: 1, case_id: SAMPLE_CASE_ID, kind: "Finding" };
@@ -33,6 +34,32 @@ test("operator Bearer sees everything", () => {
 test("sample writes are blocked", () => {
   assert.equal(sampleWriteBlocked("larkmoor-demo"), true);
   assert.equal(sampleWriteBlocked("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), false);
+});
+
+test("demoLimitReached blocks more than N receipts in the last hour", () => {
+  const now = 2_000_000_000_000_000_000n;
+  const hour = 3600n * 1_000_000_000n;
+  const receipts = Array.from({ length: 13 }, (_, i) => ({
+    timestamp_ns: String(now - hour + 1n + BigInt(i)),
+  }));
+  const hit = demoLimitReached(receipts, "100000000000000000000000", {
+    nowNs: now,
+    maxHourly: 12,
+    floorYocto: "1",
+  });
+  assert.equal(hit.blocked, true);
+  assert.equal(hit.reason, "hourly");
+});
+
+test("demoLimitReached blocks allowance below floor", () => {
+  const now = 2_000_000_000_000_000_000n;
+  const hit = demoLimitReached([{ timestamp_ns: "1" }], "1", {
+    nowNs: now,
+    maxHourly: 12,
+    floorYocto: "100",
+  });
+  assert.equal(hit.blocked, true);
+  assert.equal(hit.reason, "allowance");
 });
 
 test("parseCaseIdsHeader accepts 128-bit hex only", () => {

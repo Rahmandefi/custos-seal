@@ -41,3 +41,45 @@ export function filterReceipts(receipts, callerIds, operator) {
 export function sampleWriteBlocked(caseId) {
   return isSampleCaseId(caseId);
 }
+
+export const DEMO_HOURLY_MAX_DEFAULT = 12;
+export const DEMO_ALLOWANCE_FLOOR_DEFAULT = "10000000000000000000000";
+
+export function receiptsInWindow(receipts, nowNs, windowNs) {
+  const now = BigInt(nowNs);
+  const win = BigInt(windowNs);
+  let n = 0;
+  for (const r of receipts || []) {
+    if (r?.timestamp_ns == null) continue;
+    try {
+      if (now - BigInt(r.timestamp_ns) <= win) n += 1;
+    } catch {
+      /* skip */
+    }
+  }
+  return n;
+}
+
+export function demoLimitReached(receipts, allowance, { nowNs, maxHourly, floorYocto } = {}) {
+  const hourly = receiptsInWindow(receipts, nowNs, 3600n * 1_000_000_000n);
+  const max = Number(maxHourly ?? DEMO_HOURLY_MAX_DEFAULT);
+  if (hourly > max) return { blocked: true, reason: "hourly", hourly, max };
+  try {
+    if (allowance != null && allowance !== "" && BigInt(allowance) < BigInt(floorYocto ?? DEMO_ALLOWANCE_FLOOR_DEFAULT)) {
+      return { blocked: true, reason: "allowance", hourly, max };
+    }
+  } catch {
+    return { blocked: true, reason: "allowance", hourly, max };
+  }
+  return { blocked: false, hourly, max };
+}
+
+export function formatAllowanceNear(yocto) {
+  if (yocto == null || yocto === "") return "unknown";
+  try {
+    const n = Number(BigInt(yocto)) / 1e24;
+    return `${n.toFixed(4)} NEAR`;
+  } catch {
+    return "unknown";
+  }
+}

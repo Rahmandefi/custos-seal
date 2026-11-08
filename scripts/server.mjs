@@ -23,6 +23,7 @@ import {
   receiptCount,
   viewAccount,
   viewFunction,
+  writerAllowance,
 } from "../src/near.mjs";
 import { runAttack } from "../src/attacks.mjs";
 import { evidenceCommitment, hexToBytes, newSalt } from "../src/commit.mjs";
@@ -35,6 +36,10 @@ import {
   isOperatorRequest,
   filterReceipts,
   sampleWriteBlocked,
+  demoLimitReached,
+  formatAllowanceNear,
+  DEMO_HOURLY_MAX_DEFAULT,
+  DEMO_ALLOWANCE_FLOOR_DEFAULT,
 } from "../src/session-scope.mjs";
 
 export const testHooks = {
@@ -179,8 +184,15 @@ async function statusPayload(req) {
   const n = await receiptCount();
   const acct = await viewAccount(CONTRACT);
   const all = [];
-  for (let i = 0; i < n; i++) all.push(summarizeReceipt(await getReceipt(i)));
+  for (let i = 0; i < n; i++) all.push(summarizeReceipt(await readReceipt(i)));
   const receipts = filterReceipts(all, scope.ids, scope.operator);
+  const allow = await writerAllowance();
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+  const cap = demoLimitReached(all, allow.allowance, {
+    nowNs,
+    maxHourly: Number(process.env.DEMO_HOURLY_MAX || DEMO_HOURLY_MAX_DEFAULT),
+    floorYocto: process.env.DEMO_ALLOWANCE_FLOOR || DEMO_ALLOWANCE_FLOOR_DEFAULT,
+  });
   statusCache = {
     at: Date.now(),
     key: cacheKey,
@@ -193,6 +205,10 @@ async function statusPayload(req) {
       sample_case_id: SAMPLE_CASE_ID,
       storage_usage: acct.storage_usage,
       receipts,
+      writer_allowance: allow.allowance ?? null,
+      writer_allowance_near: formatAllowanceNear(allow.allowance),
+      demo_hourly_count: cap.hourly,
+      demo_hourly_max: cap.max,
       wallet_events_contract: walletEventsContractId(),
     },
   };
@@ -275,6 +291,30 @@ async function handleAnalyze(req, forceHold, ctx) {
       const err = new Error("demo mode accepts the sample file only");
       err.status = 403;
       err.stage = "demo_sample";
+      throw err;
+    }
+    ctx.stage = "demo_cap";
+    const snap = testHooks.demoCap
+      ? await testHooks.demoCap()
+      : {
+          receipts: (await (async () => {
+            const n = await receiptCount();
+            const list = [];
+            for (let i = 0; i < n; i++) list.push(await readReceipt(i));
+            return list;
+          })()),
+          allowance: (await writerAllowance()).allowance,
+        };
+    const cap = demoLimitReached(snap.receipts, snap.allowance, {
+      nowNs: BigInt(Date.now()) * 1_000_000n,
+      maxHourly: Number(process.env.DEMO_HOURLY_MAX || DEMO_HOURLY_MAX_DEFAULT),
+      floorYocto: process.env.DEMO_ALLOWANCE_FLOOR || DEMO_ALLOWANCE_FLOOR_DEFAULT,
+    });
+    if (cap.blocked) {
+      const err = new Error("demo limit reached; run npm run verify instead");
+      err.status = 429;
+      err.code = "DEMO_LIMIT";
+      err.stage = "demo_cap";
       throw err;
     }
   }

@@ -25,9 +25,19 @@ export function defaultSetup() {
   };
 }
 
+export const SETUP_SESS = "custos-setup-ephemeral";
+
 export function loadSetup() {
   try {
-    const s = { ...defaultSetup(), ...JSON.parse(localStorage.getItem(SETUP_LS) || "{}") };
+    const durable = JSON.parse(localStorage.getItem(SETUP_LS) || "{}");
+    delete durable.salt;
+    let eph = {};
+    try {
+      eph = JSON.parse(sessionStorage.getItem(SETUP_SESS) || "{}");
+    } catch {
+      eph = {};
+    }
+    const s = { ...defaultSetup(), ...durable, salt: eph.salt || "" };
     if (s.step === "case") s.step = "confirm";
     if (!SETUP_STEPS.some((x) => x.id === s.step)) s.step = "connect";
     return s;
@@ -37,7 +47,9 @@ export function loadSetup() {
 }
 
 export function saveSetup(s) {
-  localStorage.setItem(SETUP_LS, JSON.stringify(s));
+  const { salt, ...durable } = s;
+  localStorage.setItem(SETUP_LS, JSON.stringify(durable));
+  sessionStorage.setItem(SETUP_SESS, JSON.stringify({ salt: salt || "" }));
 }
 
 export function setupIndex(step) {
