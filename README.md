@@ -95,7 +95,8 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 Honest limits (NEAR docs): a `provider_tee` signature does not prove *which* GPU instance served the request; gateway + model evidence are not a complete cryptographic chain per response. We use non-streaming Chat Completions with a canonical model ID and `x-no-aliasing`. TDX quotes are verified off-chain; only hashes go on-chain.
 
-Plaintext evidence exists only in memory during a request. The backend keeps ciphertext, hashes, and attestation/signature evidence for audit. `clearResponseCache()` runs after verification.
+Evidence stays in the browser for the visitor's session. The hosted app does not keep evidence files or ciphertext after a request. Receipts on chain are hashes, signed findings, and policy verdicts. `clearResponseCache()` runs after verification.
+Scoping is view isolation; the chain is public.
 
 ## Setup from scratch
 

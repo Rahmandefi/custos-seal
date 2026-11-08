@@ -6,7 +6,7 @@ import { SAMPLE_CASE_ID } from "./session-scope.mjs";
 process.env.VERCEL = process.env.VERCEL || "1";
 process.env.DEMO_MODE = "1";
 
-const { handleRequest } = await import("../scripts/server.mjs");
+const { handleRequest, testHooks } = await import("../scripts/server.mjs");
 
 function listen() {
   const server = createServer(handleRequest);
@@ -71,6 +71,46 @@ test("GET /api/status with B ids does not include A hex case", async () => {
       false
     );
   } finally {
+    server.close();
+  }
+});
+
+test("B cannot read A's real receipt id via /api/receipt or /api/export", async () => {
+  const a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const rec = {
+    id: 11,
+    case_id: a,
+    kind: "Finding",
+    policy_verdict: "Hold",
+    actor: "ftwriter15e434.testnet",
+  };
+  testHooks.getReceipt = async (id) => (Number(id) === 11 ? rec : null);
+  testHooks.buildExport = async () => ({
+    receipts: [rec],
+    timeline: [{ id: 11, case_id: a }],
+    findings: [{ receipt_id: 11 }],
+    approvals: [],
+    access_log: [],
+    summary: { receipt_count: 1, finding_count: 1 },
+  });
+  const { server, port } = await listen();
+  try {
+    const recRes = await call(port, "/api/receipt/11", {
+      headers: { "x-custos-case-ids": b },
+    });
+    assert.equal(recRes.status, 404);
+    const exp = await call(port, "/api/export", {
+      headers: { "x-custos-case-ids": b },
+    });
+    assert.equal(exp.status, 200);
+    const ids = (exp.json.receipts || []).map((r) => Number(r.id));
+    assert.equal(ids.includes(11), false);
+    assert.equal((exp.json.findings || []).some((f) => Number(f.receipt_id) === 11), false);
+    assert.equal(exp.json.verification?.last_local_receipt, undefined);
+  } finally {
+    testHooks.getReceipt = null;
+    testHooks.buildExport = null;
     server.close();
   }
 });

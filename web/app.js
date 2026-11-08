@@ -157,18 +157,21 @@ function createLocalCase({ name, desc, fromSample } = {}) {
 }
 
 async function loadSampleIncident() {
-  createLocalCase({
-    name: "Sample incident (FICTIONAL)",
-    desc: "Training sample copied into a new case",
-    fromSample: true,
-  });
   const s = await (await fetch("/api/sample?kind=hold")).json();
   state.sampleText = s.text || "";
   if (s.salt) state.sampleSalt = s.salt;
-  const blob = new Blob([s.text], { type: "text/plain" });
-  const file = new File([blob], s.name, { type: "text/plain" });
-  await commitFile(file, "sample");
-  location.hash = "#/workspace";
+  state.walk.evidenceName = s.name || "larkmoor-hold.txt";
+  state.walk.evidenceText = s.text || "";
+  state.walk.source = "sample";
+  state.walk.caseName = "Sample incident (FICTIONAL)";
+  state.walk.caseDesc = "Shipped training case. Read-only.";
+  state.walk.caseId = "";
+  persistWalk();
+  const findings = await (await fetch("/api/sample/findings")).json();
+  const map = {};
+  for (const f of findings.findings || []) map[Number(f.receipt_id)] = f;
+  state.localFindings = { ...state.localFindings, ...map };
+  location.hash = "#/finding";
 }
 
 function persistSetup() {
@@ -425,7 +428,7 @@ function tree(active) {
         return html || `<div class="tg">No matches for '${esc(state.filterQ)}'</div>`;
       })()}
     </div>
-    <div class="sfoot">${svg("lock", 13)}Evidence encrypted at rest</div>
+    <div class="sfoot">${svg("lock", 13)}Evidence stays in this browser; the server stores nothing</div>
   </aside>`;
 }
 
@@ -739,7 +742,7 @@ function viewWorkspace() {
           ${
             w.commitment
               ? `<div class="dsec">
-                  <div class="dl">Salted commitment <span class="fx">encrypted at rest</span></div>
+                  <div class="dl">Salted commitment <span class="fx">computed in this browser</span></div>
                   ${copyVal(w.commitment)}
                   <a class="lnk" href="#/analyze">Next: run the analysis ${svg("arrow", 13)}</a>
                 </div>`

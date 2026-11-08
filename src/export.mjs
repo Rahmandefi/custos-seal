@@ -181,15 +181,6 @@ export async function buildExport(outDir) {
       r3: "On-chain ed25519_verify of the signed finding at write time.",
       tcb: "acceptedTcbStatuses: UpToDate only.",
       signature_kind: "provider_tee required or no receipt is written.",
-      last_local_receipt: localFinding
-        ? {
-            finding_hash: localFinding.finding_hash,
-            citation_hashes: localFinding.citation_hashes,
-            evidence_commitments: localFinding.evidence_commitments,
-            policy_verdict: localFinding.policy_verdict,
-            policy_reasons: localFinding.policy_reasons,
-          }
-        : null,
     },
     limits_statement: LIMITS,
   };

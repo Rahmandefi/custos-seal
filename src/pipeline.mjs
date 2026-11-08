@@ -373,6 +373,7 @@ export async function analyzeEvidence({
   root,
   apiKey = process.env.NEAR_AI_API_KEY,
   writeOnChain = true,
+  persistLocalArtifacts = true,
   runDcap = true,
   tee,
   salt,
@@ -657,21 +658,23 @@ export async function analyzeEvidence({
     case_id: caseId,
   };
 
-  await writeFile(join(outDir, "receipt.json"), JSON.stringify(receipt, null, 2));
-  await writeFile(join(outDir, "case-salt.hex"), bytesToHex(caseSalt) + "\n");
-  await writeFile(
-    join(outDir, "case.json"),
-    JSON.stringify(
-      {
-        case_id: caseId,
-        salt: bytesToHex(caseSalt),
-        evidence_commitment: commitHex,
-        nonce: nonceHex,
-      },
-      null,
-      2
-    )
-  );
+  if (persistLocalArtifacts) {
+    await writeFile(join(outDir, "receipt.json"), JSON.stringify(receipt, null, 2));
+    await writeFile(join(outDir, "case-salt.hex"), bytesToHex(caseSalt) + "\n");
+    await writeFile(
+      join(outDir, "case.json"),
+      JSON.stringify(
+        {
+          case_id: caseId,
+          salt: bytesToHex(caseSalt),
+          evidence_commitment: commitHex,
+          nonce: nonceHex,
+        },
+        null,
+        2
+      )
+    );
+  }
 
   const recordArgs = {
     case_id: caseId,
@@ -691,7 +694,9 @@ export async function analyzeEvidence({
     },
     verdict: mapVerdict(forceVerdict || policy.verdict),
   };
-  await writeFile(join(outDir, "record_finding.json"), JSON.stringify(recordArgs));
+  if (persistLocalArtifacts) {
+    await writeFile(join(outDir, "record_finding.json"), JSON.stringify(recordArgs));
+  }
 
   let tx = null;
   let receiptId = null;

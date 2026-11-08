@@ -37,6 +37,15 @@ import {
   sampleWriteBlocked,
 } from "../src/session-scope.mjs";
 
+export const testHooks = {
+  getReceipt: null,
+  buildExport: null,
+};
+
+function readReceipt(id) {
+  return (testHooks.getReceipt || getReceipt)(id);
+}
+
 
 await loadEnv();
 
@@ -142,7 +151,7 @@ function rejectSampleWrite(res, caseId) {
 }
 
 async function scopedExport(req) {
-  const raw = await buildExport(OUT);
+  const raw = await (testHooks.buildExport || (() => buildExport(OUT)))();
   const scope = callerScope(req || {});
   const receipts = filterReceipts(raw.receipts || [], scope.ids, scope.operator);
   const ids = new Set(receipts.map((r) => Number(r.id)));
@@ -283,6 +292,7 @@ async function handleAnalyze(req, forceHold, ctx) {
     root: ROOT,
     apiKey,
     writeOnChain: true,
+    persistLocalArtifacts: req.writeMode !== "demo",
     runDcap: process.env.SKIP_DCAP !== "1",
     forceVerdict: forceHold ? "Hold" : undefined,
     onStage: (s) => {
@@ -420,7 +430,7 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "GET" && req.url?.startsWith("/api/receipt/")) {
       const id = Number(req.url.split("/").pop());
-      const rec = await getReceipt(id);
+      const rec = await readReceipt(id);
       const scope = callerScope(req);
       if (!rec || typeof rec !== "object" || !filterReceipts([rec], scope.ids, scope.operator).length) {
         json(res, 404, { error: "not found" });
