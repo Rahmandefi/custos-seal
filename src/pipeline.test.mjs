@@ -143,6 +143,29 @@ test("reused nonce never calls contract", async () => {
   assert.equal(await receiptCount(), before);
 });
 
+test("unverified writer allowance never calls contract", async () => {
+  const before = await receiptCount();
+  await withTmp(async (outDir) => {
+    await assert.rejects(
+      () =>
+        analyzeEvidence({
+          evidenceText,
+          outDir,
+          writeOnChain: false,
+          runDcap: false,
+          tee: teeStub(),
+          allowanceFn: async () => ({
+            publicKey: null,
+            allowance: null,
+            error: "missing writer credentials",
+          }),
+        }),
+      (e) => e instanceof PipelineError && e.code === "ALLOWANCE_UNVERIFIED" && e.skipChain
+    );
+  });
+  assert.equal(await receiptCount(), before);
+});
+
 test("writer allowance exhausted never calls contract", async () => {
   const before = await receiptCount();
   await withTmp(async (outDir) => {

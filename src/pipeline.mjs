@@ -31,6 +31,7 @@ import {
   rpc,
   viewAccount,
   viewFunction,
+  writerAllowance,
 } from "./near.mjs";
 import {
   emptyChecks,
@@ -359,22 +360,7 @@ async function loadSeen(path) {
   }
 }
 
-async function writerAllowance() {
-  const key = JSON.parse(await readFile(FNKEY, "utf8"));
-  const pk = key.public_key;
-  try {
-    const ak = await rpc("query", {
-      request_type: "view_access_key",
-      account_id: WRITER,
-      public_key: pk,
-      finality: "final",
-    });
-    const allowance = ak?.permission?.FunctionCall?.allowance;
-    return { publicKey: pk, allowance, raw: ak };
-  } catch (e) {
-    return { publicKey: pk, allowance: null, error: String(e.message) };
-  }
-}
+
 
 /**
  * Full pipeline. Throws PipelineError (skipChain) before any contract call on fail-closed paths.
@@ -609,6 +595,18 @@ export async function analyzeEvidence({
 
   mark("allowance");
   const allowance = await allowanceFn();
+  if (
+    !allowance ||
+    allowance.error ||
+    allowance.allowance == null ||
+    allowance.allowance === ""
+  ) {
+    throw new PipelineError(
+      "ALLOWANCE_UNVERIFIED",
+      "writer allowance could not be verified",
+      checks
+    );
+  }
   if (
     allowance.allowance === "0" ||
     (typeof allowance.allowance === "string" && BigInt(allowance.allowance) === 0n)

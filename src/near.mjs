@@ -157,6 +157,38 @@ function runNear(args) {
   });
 }
 
+export async function writerAllowance({ rpcFn = rpc, keyFile = FNKEY } = {}) {
+  const pk = await privateKeyFromEnvOrFile(
+    "NEAR_WRITER_PRIVATE_KEY",
+    "NEAR_WRITER_KEY_JSON",
+    keyFile
+  );
+  if (!pk) {
+    return { publicKey: null, allowance: null, error: "missing writer credentials" };
+  }
+  let publicKey;
+  try {
+    publicKey = KeyPair.fromString(pk).getPublicKey().toString();
+  } catch {
+    return { publicKey: null, allowance: null, error: "invalid writer credentials" };
+  }
+  try {
+    const ak = await rpcFn("query", {
+      request_type: "view_access_key",
+      account_id: WRITER,
+      public_key: publicKey,
+      finality: "final",
+    });
+    const allowance = ak?.permission?.FunctionCall?.allowance;
+    if (allowance == null) {
+      return { publicKey, allowance: null, error: "allowance not returned" };
+    }
+    return { publicKey, allowance, raw: ak };
+  } catch {
+    return { publicKey, allowance: null, error: "allowance lookup failed" };
+  }
+}
+
 export async function callWriter(method, args, { deposit = "0 NEAR", gas = "100 Tgas", outDir } = {}) {
   const pk = await privateKeyFromEnvOrFile(
     "NEAR_WRITER_PRIVATE_KEY",
