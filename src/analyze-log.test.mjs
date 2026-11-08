@@ -43,9 +43,18 @@ test("sanitizeAnalyzeErrorLog drops unknown stages and unsafe codes", () => {
     elapsed_ms: -3,
   });
   assert.equal(out.stage, "unknown");
-  assert.equal(out.code, "TCB_NOT_UP_TO_DATE");
+  assert.equal(out.code, "ERROR");
   assert.equal(out.elapsed_ms, 0);
   assert.doesNotMatch(JSON.stringify(out), /Bearer|passwd/i);
+});
+
+test("sanitizeAnalyzeErrorLog allowlists exact codes only", () => {
+  assert.equal(
+    sanitizeAnalyzeErrorLog({ code: "sk-live-token-like-string" }).code,
+    "ERROR"
+  );
+  assert.equal(sanitizeAnalyzeErrorLog({ code: "RECORDING_FAILED extra" }).code, "ERROR");
+  assert.equal(sanitizeAnalyzeErrorLog({ code: "RECORDING_FAILED" }).code, "RECORDING_FAILED");
 });
 
 test("logAnalyzeError writes one JSON line to the sink", () => {
