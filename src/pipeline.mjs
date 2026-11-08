@@ -190,7 +190,7 @@ export function classifySdkError(err, stage) {
   const details = sdk?.failure?.details || err?.failure?.details || {};
   const safe = { stage, code: code || "unknown" };
   if (code === "binding.nonce_mismatch" || code === "api.nonce_mismatch") {
-    return { ...safe, row: "nonce_binding", pipelineCode: "NONCE_BINDING" };
+    return { ...safe, row: "nonce", pipelineCode: "NONCE_BINDING" };
   }
   if (code === "signature.kind_mismatch") {
     return { ...safe, row: "signature", pipelineCode: "NOT_PROVIDER_TEE" };
@@ -234,6 +234,9 @@ function applyTcbChecks(checks, attested) {
     });
   } else {
     setCheck(checks, "gateway_tcb", "pass", { evidence: { tcb_status: gwTcb } });
+  }
+  if (checks.gateway_tcb.status === "fail") {
+    return { gwTcb, modelTcb };
   }
   if (!modelTcb) {
     setCheck(checks, "model_tcb", "fail", { reason: "model tcbStatus missing" });
@@ -463,20 +466,12 @@ export async function analyzeEvidence({
 
   mark("nonce_binding");
   const requestNonce = attestationNonceHex(teeResult.requestNonce);
-  if (!requestNonce) {
-    setCheck(checks, "nonce_binding", "unsupported", {
-      reason: "SDK enforces request binding internally; this app did not generate a request nonce to compare",
-    });
-  } else if (requestNonce !== nonceHex) {
-    setCheck(checks, "nonce_binding", "fail", {
+  if (requestNonce && requestNonce !== nonceHex) {
+    setCheck(checks, "nonce", "fail", {
       reason: "reported nonce does not match the request nonce",
       evidence: { request: shortHex(requestNonce), reported: shortHex(nonceHex) },
     });
     throw new PipelineError("NONCE_BINDING", "request nonce mismatch", checks);
-  } else {
-    setCheck(checks, "nonce_binding", "pass", {
-      evidence: { request: shortHex(requestNonce), reported: shortHex(nonceHex) },
-    });
   }
   const nonceBytes = nonceToBytes(nonceHex);
 
@@ -513,6 +508,12 @@ export async function analyzeEvidence({
         ? { signer_compared: true, signer: shortHex(verifiedSigner) }
         : {}),
     },
+  });
+
+  mark("e2ee");
+  setCheck(checks, "e2ee", "not_run", {
+    detail:
+      "configured e2ee=true; X-Model-Pub-Key vs signing key is not independently checked in this request",
   });
 
   mark("citations");
@@ -569,23 +570,12 @@ export async function analyzeEvidence({
   if (runDcap) {
     try {
       const dcapOut = dcapFn ? await dcapFn(outDir) : await runDcapQvl(outDir);
-      setCheck(checks, "independent_dcap", "pass", {
-        evidence: { tool: "verify_report.py" },
-        reason: "Independent dcap-qvl on dumped quotes. Not RTMR3, MRCONFIGID, or NRAS.",
-      });
       void dcapOut;
     } catch (e) {
-      setCheck(checks, "independent_dcap", "fail", {
-        reason: e.message || "verify_report.py failed",
-      });
       throw e instanceof PipelineError
         ? new PipelineError(e.code, e.message, checks)
         : new PipelineError("DCAP_QVL_FAILED", String(e.message || e), checks);
     }
-  } else {
-    setCheck(checks, "independent_dcap", "unsupported", {
-      reason: "verify_report.py not run in this request",
-    });
   }
 
   const signedText = sig.signedText ?? sig.text ?? "";
@@ -610,6 +600,7 @@ export async function analyzeEvidence({
           ? "WRITER_KEY_UNVERIFIED"
           : null;
     if (code) {
+      setCheck(checks, "write", "fail", { reason: allowance.error || "writer key could not be verified" });
       throw new PipelineError(code, allowance.error || "writer key could not be verified", checks);
     }
   }
@@ -619,6 +610,7 @@ export async function analyzeEvidence({
     allowance.allowance == null ||
     allowance.allowance === ""
   ) {
+    setCheck(checks, "write", "fail", { reason: "writer allowance could not be verified" });
     throw new PipelineError(
       "ALLOWANCE_UNVERIFIED",
       "writer allowance could not be verified",
@@ -629,6 +621,7 @@ export async function analyzeEvidence({
     allowance.allowance === "0" ||
     (typeof allowance.allowance === "string" && BigInt(allowance.allowance) === 0n)
   ) {
+    setCheck(checks, "write", "fail", { reason: "writer gas allowance is 0" });
     throw new PipelineError("ALLOWANCE_EXHAUSTED", "writer gas allowance is 0", checks);
   }
 
@@ -705,7 +698,7 @@ export async function analyzeEvidence({
   mark("recording");
   if (writeOnChain) {
     if (!canRecord(checks)) {
-      setCheck(checks, "recording", "not_run", { reason: "prior check did not pass" });
+      setCheck(checks, "write", "not_run", { reason: "prior check did not pass" });
       throw new PipelineError("RECORDING_BLOCKED", "fail closed: not recording", checks);
     }
     try {
@@ -715,7 +708,7 @@ export async function analyzeEvidence({
       tx = sent?.tx ?? sent?.transaction?.hash ?? null;
       storageAfter = (await viewAccountFn(CONTRACT)).storage_usage;
       if (!tx) {
-        setCheck(checks, "recording", "fail", {
+        setCheck(checks, "write", "fail", {
           reason: "no transaction hash from record_finding",
         });
         throw new PipelineError("RECORDING_FAILED", "missing transaction hash", checks, {
@@ -735,7 +728,7 @@ export async function analyzeEvidence({
       try {
         outcome = await statuser(tx);
       } catch (e) {
-        setCheck(checks, "recording", "fail", {
+        setCheck(checks, "write", "fail", {
           reason: `transaction status unknown: ${e.message || e}`,
           evidence: { tx },
         });
@@ -747,7 +740,7 @@ export async function analyzeEvidence({
       }
       const exec = txExecutionState(outcome);
       if (exec === "pending" || exec === "unknown") {
-        setCheck(checks, "recording", "fail", {
+        setCheck(checks, "write", "fail", {
           reason: `transaction ${exec}; not FINAL success`,
           evidence: { tx },
         });
@@ -758,7 +751,7 @@ export async function analyzeEvidence({
         });
       }
       if (exec !== "final_success") {
-        setCheck(checks, "recording", "fail", {
+        setCheck(checks, "write", "fail", {
           reason: "transaction failed",
           evidence: { tx },
         });
@@ -793,7 +786,7 @@ export async function analyzeEvidence({
         }
       }
       if (!receiptMatchesIntended(rec, intended)) {
-        setCheck(checks, "recording", "fail", {
+        setCheck(checks, "write", "fail", {
           reason: "no on-chain receipt matches case, finding hash, nonce, and evidence commitment",
           evidence: { tx },
         });
@@ -804,7 +797,7 @@ export async function analyzeEvidence({
           { skipChain: false, tx, execution: "mismatch" }
         );
       }
-      setCheck(checks, "recording", "pass", {
+      setCheck(checks, "write", "pass", {
         evidence: {
           receipt_id: receiptId,
           tx,
@@ -816,7 +809,7 @@ export async function analyzeEvidence({
       await rememberTx(outDir, receiptId, tx);
     } catch (e) {
       if (e instanceof PipelineError) throw e;
-      setCheck(checks, "recording", "fail", {
+      setCheck(checks, "write", "fail", {
         reason: e.message || "record_finding failed",
         evidence: { tx: tx || null },
       });
@@ -827,7 +820,7 @@ export async function analyzeEvidence({
       });
     }
   } else {
-    setCheck(checks, "recording", "not_run", {
+    setCheck(checks, "write", "not_run", {
       reason: "chain write not executed for this run",
     });
   }

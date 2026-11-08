@@ -41,6 +41,7 @@ import {
   DEMO_HOURLY_MAX_DEFAULT,
   DEMO_ALLOWANCE_FLOOR_DEFAULT,
 } from "../src/session-scope.mjs";
+import { toWireChecks } from "../web/verify-checks.js";
 
 export const testHooks = {
   getReceipt: null,
@@ -207,6 +208,7 @@ async function statusPayload(req) {
       receipts,
       writer_allowance: allow.allowance ?? null,
       writer_allowance_near: formatAllowanceNear(allow.allowance),
+      writer_public_key: allow.publicKey ?? null,
       demo_hourly_count: cap.hourly,
       demo_hourly_max: cap.max,
       wallet_events_contract: walletEventsContractId(),
@@ -379,7 +381,7 @@ export async function handleRequest(req, res) {
         policy: result.policy.verdict,
         reasons: result.policy.reasons,
         actions: result.receipt?.finding?.recommended_actions || [],
-        checks: result.checks,
+        checks: toWireChecks(result.checks),
       });
       return;
     }
@@ -672,7 +674,7 @@ export async function handleRequest(req, res) {
       error: e.message,
       code: e.code || "ERROR",
       skip_chain: Boolean(e.skipChain),
-      checks: e.checks || null,
+      checks: e.checks ? toWireChecks(e.checks) : null,
       tx: e.tx || null,
       execution: e.execution || null,
     });

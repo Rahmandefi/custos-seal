@@ -1,106 +1,211 @@
 /** Live Verified-panel checks. Only statuses the analysis request actually sets. */
 
-export const CHECK_ORDER = [
-  {
-    id: "gateway_tcb",
-    title: "Gateway TCB",
-    source: "InferenceClient.verify() tcbStatus, acceptedTcbStatuses UpToDate only",
-  },
-  {
-    id: "model_tcb",
-    title: "Model TCB",
-    source: "InferenceClient.verify() model tcbStatus, acceptedTcbStatuses UpToDate only",
-  },
-  {
-    id: "nonce",
-    title: "Nonce format",
-    source: "Attested reports include a 32-byte hex nonce; reject reuse. Format only, not request binding",
-  },
-  {
-    id: "nonce_binding",
-    title: "Nonce request binding",
-    source: "App-visible only if this process generated a request nonce independently and compared it. The SDK may bind internally without exposing that nonce",
-  },
-  {
-    id: "signature",
-    title: "Reply signature kind",
-    source: "verifyResponse() signatureKind must be provider_tee",
-  },
-  {
-    id: "citations",
-    title: "Citations",
-    source: "Policy P2: quote bytes must appear in the uploaded evidence",
-  },
-  {
-    id: "independent_dcap",
-    title: "Independent DCAP (verify_report.py)",
-    source: "Optional offline dcap-qvl on dumped quotes. Not RTMR3, MRCONFIGID, or NRAS",
-  },
-  {
-    id: "recording",
-    title: "Recorded in the custody log",
-    source: "FINAL successful execution of the submitted transaction, then the matching on-chain receipt (case, finding hash, nonce, evidence commitment). Count growth is not success",
-  },
-  {
-    id: "rtmr3",
-    title: "RTMR3 replay",
-    source: "Not executed in this request",
-  },
-  {
-    id: "mrconfigid",
-    title: "MRCONFIGID",
-    source: "Not executed in this request",
-  },
-  {
-    id: "gpu_nras",
-    title: "GPU evidence (NRAS)",
-    source: "Not executed in this request",
-  },
-  {
-    id: "prompt_e2ee",
-    title: "Prompt encryption check",
-    source: "SDK e2ee may be on; this request does not independently validate encryption",
-  },
+export const OFFLINE_DETAIL = "Independent offline check: npm run verify";
+export const README_HREF =
+  "https://github.com/Rahmandefi/custos-seal/blob/master/README.md#verify-without-an-api-key-screeners-start-here";
+
+export const LIVE_CHECKS = [
+  { id: "gateway_tcb", label: "Gateway TCB" },
+  { id: "model_tcb", label: "Model report verified" },
+  { id: "nonce", label: "Nonce" },
+  { id: "signature", label: "provider_tee signature" },
+  { id: "citations", label: "Citations P2" },
+  { id: "write", label: "On-chain write" },
 ];
 
-const LIVE = new Set([
-  "gateway_tcb",
-  "model_tcb",
-  "nonce",
-  "nonce_binding",
-  "signature",
-  "citations",
-  "independent_dcap",
-  "recording",
-]);
+export const E2EE_CONFIGURED = true;
+export const E2EE_DETAIL =
+  "configured e2ee=true; X-Model-Pub-Key vs signing key is not independently checked in this request";
+
+export const OFFLINE_CHECK = {
+  id: "offline",
+  label: "Independent offline check: npm run verify",
+  href: README_HREF,
+};
+
+export const OFFLINE_CHECKS = [OFFLINE_CHECK];
+
+export const CHECK_ORDER = [
+  ...LIVE_CHECKS.map((r) => ({ id: r.id, title: r.label, source: r.label })),
+  { id: OFFLINE_CHECK.id, title: OFFLINE_CHECK.label, source: OFFLINE_DETAIL },
+];
+
+const LIVE = new Set(LIVE_CHECKS.map((r) => r.id));
+
+export const ERROR_TO_ROW = {
+  NONCE_INVALID: "nonce",
+  NONCE_REUSED: "nonce",
+  NONCE_BINDING: "nonce",
+  TCB_NOT_UP_TO_DATE: "gateway_tcb",
+  NOT_PROVIDER_TEE: "signature",
+  SIGNER_MISMATCH: "signature",
+  CITATION_MISMATCH: "citations",
+  RECORDING_BLOCKED: "write",
+  RECORDING_FAILED: "write",
+  RECORDING_UNCONFIRMED: "write",
+  RECORDING_MISMATCH: "write",
+  ALLOWANCE_UNVERIFIED: "write",
+  ALLOWANCE_EXHAUSTED: "write",
+  WRITER_KEY_UNSAFE: "write",
+  WRITER_KEY_UNVERIFIED: "write",
+};
+
+function labelFor(id) {
+  return LIVE_CHECKS.find((r) => r.id === id)?.label || OFFLINE_CHECK.label || id;
+}
+
+function mapCheckId(id) {
+  if (id === "recording") return "write";
+  if (
+    id === "independent_dcap" ||
+    id === "gpu_nras" ||
+    id === "nras" ||
+    id === "rtmr3" ||
+    id === "mrconfigid" ||
+    id === "reportdata"
+  ) {
+    return "offline";
+  }
+  return id;
+}
+
+function formatEvidence(evidence) {
+  if (!evidence || typeof evidence !== "object") return null;
+  const parts = [];
+  if (evidence.tcb_status) parts.push(`tcb ${evidence.tcb_status}`);
+  if (evidence.signer) parts.push(`signer ${evidence.signer}`);
+  if (evidence.signature_kind) parts.push(evidence.signature_kind);
+  if (evidence.tx) parts.push(`tx ${evidence.tx}`);
+  if (evidence.nonce) parts.push(`nonce ${evidence.nonce}`);
+  if (evidence.receipt_id != null) parts.push(`receipt ${evidence.receipt_id}`);
+  if (evidence.citation_count != null) parts.push(`${evidence.citation_count} citations`);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 export function emptyChecks() {
   const checks = {};
-  for (const row of CHECK_ORDER) {
+  for (const row of LIVE_CHECKS) {
     checks[row.id] = {
       id: row.id,
-      title: row.title,
-      status: LIVE.has(row.id) ? "not_run" : "unsupported",
-      reason: LIVE.has(row.id) ? null : row.source,
+      label: row.label,
+      title: row.label,
+      status: "not_run",
+      reason: null,
+      detail: null,
       evidence: null,
-      source: row.source,
     };
   }
+  checks.offline = {
+    id: OFFLINE_CHECK.id,
+    label: OFFLINE_CHECK.label,
+    title: OFFLINE_CHECK.label,
+    status: "not_in_request",
+    reason: OFFLINE_DETAIL,
+    detail: OFFLINE_DETAIL,
+    href: README_HREF,
+    evidence: null,
+  };
   return checks;
 }
 
-export function setCheck(checks, id, status, { reason = null, evidence = null } = {}) {
+export function setCheck(checks, id, status, { reason = null, evidence = null, detail = null } = {}) {
+  if (id === "nonce_binding") {
+    if (status !== "fail") return checks;
+    id = "nonce";
+  }
+  if (id === "independent_dcap") return checks;
+  id = mapCheckId(id);
   const prev = checks[id] || {};
+  const d = detail || reason || formatEvidence(evidence);
   checks[id] = {
     ...prev,
     id,
-    title: prev.title || CHECK_ORDER.find((r) => r.id === id)?.title || id,
+    label: prev.label || labelFor(id),
+    title: prev.label || labelFor(id),
     status,
-    reason,
+    reason: reason || d,
+    detail: d,
     evidence,
-    source: prev.source || CHECK_ORDER.find((r) => r.id === id)?.source || "",
   };
   return checks;
+}
+
+export function checksMap(checks) {
+  if (!checks) return {};
+  const o = Array.isArray(checks)
+    ? Object.fromEntries(checks.map((c) => [c.id, c]))
+    : { ...checks };
+  if (o.write && !o.recording) o.recording = o.write;
+  if (o.recording && !o.write) o.write = o.recording;
+  return o;
+}
+
+export function toWireChecks(checks) {
+  const m = checksMap(checks);
+  const live = LIVE_CHECKS.map((meta) => {
+    const c = m[meta.id] || {};
+    return {
+      id: meta.id,
+      label: meta.label,
+      status: c.status || "not_run",
+      detail: c.detail || c.reason || formatEvidence(c.evidence) || null,
+    };
+  });
+  live.push({
+    id: "e2ee",
+    label: "Prompt encryption check",
+    status: "not_run",
+    detail: cE2eeDetail(m.e2ee) || E2EE_DETAIL,
+  });
+  live.push({
+    id: OFFLINE_CHECK.id,
+    label: OFFLINE_CHECK.label,
+    status: "not_in_request",
+    detail: OFFLINE_DETAIL,
+    href: README_HREF,
+  });
+  return live;
+}
+
+function cE2eeDetail(row) {
+  return row?.detail || row?.reason || null;
+}
+
+export function failRowForError(code, checks) {
+  const m = checksMap(checks);
+  if (code === "TCB_NOT_UP_TO_DATE") {
+    if (m.model_tcb?.status === "fail") return "model_tcb";
+    if (m.gateway_tcb?.status === "fail") return "gateway_tcb";
+    return "gateway_tcb";
+  }
+  return ERROR_TO_ROW[code] || null;
+}
+
+export function recordedRunChecks(receipt) {
+  const f = receipt?.finding || {};
+  const hashes = f.citation_hashes || [];
+  const sigOk = Boolean(f.signature || f.signer_pubkey);
+  const tcb = f.tcb_status || null;
+  return [
+    {
+      id: "signature",
+      label: "Signature checked on-chain at write time",
+      status: sigOk ? "pass" : "not_run",
+      detail: sigOk ? "ed25519_verify at record_finding" : "not stored on this receipt",
+    },
+    {
+      id: "gateway_tcb",
+      label: "TCB status stored",
+      status: tcb ? "pass" : "not_run",
+      detail: tcb || "not stored on this receipt",
+    },
+    {
+      id: "citations",
+      label: "Citation hashes stored",
+      status: hashes.length ? "pass" : "not_run",
+      detail: hashes.length ? `${hashes.length} citation hashes` : "not stored on this receipt",
+    },
+  ];
 }
 
 export function attestationNonceHex(raw) {
@@ -119,13 +224,10 @@ export function attestationNonceHex(raw) {
 }
 
 export function canRecord(checks) {
+  const m = checksMap(checks);
   for (const id of ["gateway_tcb", "model_tcb", "nonce", "signature", "citations"]) {
-    if (checks[id]?.status !== "pass") return false;
+    if (m[id]?.status !== "pass") return false;
   }
-  if (checks.nonce_binding?.status === "fail" || checks.nonce_binding?.status === "not_run") {
-    return false;
-  }
-  if (checks.independent_dcap?.status === "fail") return false;
   return true;
 }
 
@@ -169,21 +271,21 @@ export function receiptMatchesIntended(onchain, intended) {
 
 export function limitationLabels(checks) {
   if (!checks) return [];
-  return CHECK_ORDER.filter((r) => LIVE.has(r.id) && checks[r.id]?.status === "unsupported").map(
-    (r) => r.title
-  );
+  const m = checksMap(checks);
+  return LIVE_CHECKS.filter((r) => m[r.id]?.status === "unsupported").map((r) => r.label);
 }
 
 export function overallVerification(checks, analyze = {}) {
+  if (analyze?.recordedRun) return "recorded";
   if (!checks) return analyze.error ? "failed" : "unavailable";
-  const live = CHECK_ORDER.filter((r) => LIVE.has(r.id)).map((r) => checks[r.id]);
-  if (live.some((c) => c.status === "fail")) return "failed";
-  if (checks.recording?.status === "pass" && canRecord(checks)) {
-    if (limitationLabels(checks).length) return "incomplete";
-    if (live.some((c) => c.status === "not_run")) return "incomplete";
+  const m = checksMap(checks);
+  const live = LIVE_CHECKS.map((r) => m[r.id]);
+  if (live.some((c) => c?.status === "fail")) return "failed";
+  if (m.write?.status === "pass" && canRecord(checks)) {
+    if (live.some((c) => c?.status === "not_run")) return "incomplete";
     return "verified";
   }
-  if (live.every((c) => c.status === "not_run" || c.status === "unsupported")) {
+  if (live.every((c) => !c || c.status === "not_run" || c.status === "not_in_request" || c.status === "unsupported")) {
     return analyze.error ? "failed" : "unavailable";
   }
   return "incomplete";
@@ -231,15 +333,28 @@ export function fromAnalyzeHttp({ ok, status, data, parseError, tx = null, check
 
 export function errorCopy(analyze) {
   if (!analyze || (!analyze.error && analyze.overall !== "failed" && !analyze.code)) return null;
-  const tx = analyze.tx || analyze.checks?.recording?.evidence?.tx || null;
+  const mapped = checksMap(analyze.checks);
+  const tx = analyze.tx || mapped.write?.evidence?.tx || mapped.recording?.evidence?.tx || null;
   const execution = analyze.execution || null;
   const skipChain = analyze.skip_chain ?? analyze.skipChain ?? true;
   const code = analyze.code;
   if (code === "ANALYSIS_OUTCOME_UNKNOWN") {
+    const before = analyze.receipt_count_before;
+    const after = analyze.receipt_count_after;
+    const appeared = analyze.new_receipt_for_case;
+    let countNote = null;
+    if (before != null && after != null) {
+      countNote =
+        appeared != null
+          ? appeared
+            ? `receipt_count ${before} → ${after}; a new receipt appeared for this case.`
+            : `receipt_count ${before} → ${after}; no new receipt for this case.`
+          : `receipt_count ${before} → ${after}.`;
+    }
     return {
       chip: "Unable to verify",
       headline: "Analysis outcome unknown; a receipt may exist.",
-      body: [tx ? `Transaction ${tx}.` : null, "Do not automatically resubmit."]
+      body: [tx ? `Transaction ${tx}.` : null, countNote, "Do not automatically resubmit."]
         .filter(Boolean)
         .join(" "),
       skipChain: false,
@@ -282,10 +397,19 @@ export function errorCopy(analyze) {
   if (skipChain) {
     return {
       chip: "Unable to verify",
-      headline: "No verified finding was recorded",
+      headline: "No receipt was written",
       body: "The contract was not called.",
       skipChain: true,
       tx: null,
+    };
+  }
+  if (code === "RECORDING_FAILED" || mapped.write?.status === "fail") {
+    return {
+      chip: "Unable to verify",
+      headline: "No receipt was written",
+      body: tx ? `Transaction ${tx}.` : "The contract rejected the write.",
+      skipChain: false,
+      tx,
     };
   }
   return {
@@ -299,56 +423,87 @@ export function errorCopy(analyze) {
 
 /** UI mapping. Ignores timer ticks. Missing checks stay unverified. */
 export function panelView(analyze) {
+  if (analyze?.running && !analyze?.done) {
+    return {
+      title: "Verified panel",
+      chip: "Analyzing",
+      pending: true,
+      overall: "pending",
+      headline: "Waiting for analysis",
+      body: null,
+      rows: [],
+    };
+  }
+  if (analyze?.recordedRun) {
+    const rows = recordedRunChecks(analyze.receipt);
+    return {
+      title: "Recorded run",
+      chip: "Recorded run",
+      overall: "recorded",
+      headline: null,
+      body: null,
+      rows: rows.map((r) => ({
+        id: r.id,
+        title: r.label,
+        label: r.label,
+        status: r.status,
+        reason: r.detail,
+        detail: r.detail,
+        evidence: null,
+      })),
+    };
+  }
   const checks = analyze?.checks;
   const copy = errorCopy(analyze);
   if (!checks) {
     const failed = Boolean(analyze?.error);
     return {
-      chip: analyze?.running ? "Analyzing" : failed ? "Unable to verify" : "Verification unavailable",
+      title: "Verified panel",
+      chip: failed ? "Unable to verify" : "Verification unavailable",
       overall: failed ? "failed" : "unavailable",
+      pending: false,
       headline: copy?.headline || null,
       body: copy?.body || null,
-      rows: CHECK_ORDER.map((r) => ({
-        id: r.id,
-        title: r.title,
-        status: "not_run",
-        reason: analyze?.running ? "In progress" : "No per-check evidence for this run",
-        evidence: null,
-      })),
+      rows: [],
     };
   }
   const overall = overallVerification(checks, analyze);
-  const limits = limitationLabels(checks);
+  const wire = toWireChecks(checks);
   const chip =
-    analyze?.running && overall === "unavailable"
-      ? "Analyzing"
-      : overall === "verified"
-        ? "Verified"
-        : overall === "failed"
-          ? "Unable to verify"
-          : overall === "incomplete"
-            ? limits.length
-              ? `Verification incomplete (${limits.join("; ")})`
-              : "Verification incomplete"
-            : "Verification unavailable";
+    overall === "verified"
+      ? "Verified"
+      : overall === "failed"
+        ? "Unable to verify"
+        : overall === "incomplete"
+          ? "Verification incomplete"
+          : "Verification unavailable";
+  const header =
+    overall === "failed" && checksMap(checks).write?.status !== "pass"
+      ? "No receipt was written"
+      : copy?.headline || null;
   return {
+    title: "Verified panel",
     chip,
     overall,
-    headline: copy?.headline || null,
+    pending: false,
+    headline: header,
     body: copy?.body || null,
-    rows: CHECK_ORDER.map((r) => {
-      const c = checks[r.id] || { status: "not_run" };
+    rows: wire.map((r) => {
+      const m = checksMap(checks);
       return {
         id: r.id,
-        title: r.title,
-        status: c.status || "not_run",
-        reason: c.reason || null,
-        evidence: c.evidence || null,
+        title: r.label,
+        label: r.label,
+        status: r.status,
+        reason: r.detail,
+        detail: r.detail,
+        href: r.href || m[r.id]?.href || null,
+        evidence: m[r.id]?.evidence || null,
       };
     }),
   };
 }
 
 export function freshAnalyzeState() {
-  return { running: true, checks: emptyChecks() };
+  return { running: true };
 }

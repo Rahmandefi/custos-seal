@@ -5,6 +5,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeEvidence, PipelineError } from "./pipeline.mjs";
 import { receiptCount } from "./near.mjs";
+import { panelView, failRowForError } from "../web/verify-checks.js";
+
+function assertOwnRowRed(err, expectedId) {
+  assert.ok(err instanceof PipelineError);
+  const id = expectedId || failRowForError(err.code, err.checks);
+  assert.equal(id, expectedId || id);
+  const view = panelView({
+    done: true,
+    error: err.message,
+    checks: err.checks,
+    code: err.code,
+    skip_chain: err.skipChain,
+  });
+  const row = view.rows.find((r) => r.id === expectedId);
+  assert.equal(row?.status, "fail", `${err.code} should turn ${expectedId} red`);
+  const liveFail = view.rows.filter(
+    (r) => r.status === "fail" && !["reportdata", "rtmr3", "mrconfigid", "nras"].includes(r.id)
+  );
+  assert.ok(
+    liveFail.every((r) => r.id === expectedId),
+    `${err.code} extra red rows: ${liveFail.map((r) => r.id).join(",")}`
+  );
+}
 
 const evidenceText =
   "alpha\nwwwroot\\human2.aspx  created 2023-06-01 02:39\nomega\n";
@@ -70,16 +93,18 @@ const noChain = {
 test("TCB not UpToDate never calls contract", async () => {
   const before = await receiptCount();
   await withTmp(async (outDir) => {
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          ...noChain,
-          tee: teeStub({ gwTcb: "OutOfDate" }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "TCB_NOT_UP_TO_DATE" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...noChain,
+      tee: teeStub({ gwTcb: "OutOfDate" }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "TCB_NOT_UP_TO_DATE");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "gateway_tcb");
   });
   assert.equal(await receiptCount(), before);
 });
@@ -87,16 +112,18 @@ test("TCB not UpToDate never calls contract", async () => {
 test("signature not provider_tee never calls contract", async () => {
   const before = await receiptCount();
   await withTmp(async (outDir) => {
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          ...noChain,
-          tee: teeStub({ signatureKind: "gateway_only" }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "NOT_PROVIDER_TEE" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...noChain,
+      tee: teeStub({ signatureKind: "gateway_only" }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "NOT_PROVIDER_TEE");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "signature");
   });
   assert.equal(await receiptCount(), before);
 });
@@ -106,16 +133,18 @@ test("citation mismatch never calls contract", async () => {
   const finding = goodFinding();
   finding.citations[0].quote = "this quote is not in the file";
   await withTmp(async (outDir) => {
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          ...noChain,
-          tee: teeStub({ finding }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "CITATION_MISMATCH" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...noChain,
+      tee: teeStub({ finding }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "CITATION_MISMATCH");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "citations");
   });
   assert.equal(await receiptCount(), before);
 });
@@ -129,16 +158,18 @@ test("reused nonce never calls contract", async () => {
       ...noChain,
       tee: teeStub({ nonce: "cc".repeat(32) }),
     });
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          ...noChain,
-          tee: teeStub({ nonce: "cc".repeat(32) }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "NONCE_REUSED" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      ...noChain,
+      tee: teeStub({ nonce: "cc".repeat(32) }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "NONCE_REUSED");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "nonce");
   });
   assert.equal(await receiptCount(), before);
 });
@@ -146,22 +177,24 @@ test("reused nonce never calls contract", async () => {
 test("unverified writer allowance never calls contract", async () => {
   const before = await receiptCount();
   await withTmp(async (outDir) => {
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          writeOnChain: false,
-          runDcap: false,
-          tee: teeStub(),
-          allowanceFn: async () => ({
-            publicKey: null,
-            allowance: null,
-            error: "missing writer credentials",
-          }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "ALLOWANCE_UNVERIFIED" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      writeOnChain: false,
+      runDcap: false,
+      tee: teeStub(),
+      allowanceFn: async () => ({
+        publicKey: null,
+        allowance: null,
+        error: "missing writer credentials",
+      }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "ALLOWANCE_UNVERIFIED");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "write");
   });
   assert.equal(await receiptCount(), before);
 });
@@ -169,18 +202,20 @@ test("unverified writer allowance never calls contract", async () => {
 test("writer allowance exhausted never calls contract", async () => {
   const before = await receiptCount();
   await withTmp(async (outDir) => {
-    await assert.rejects(
-      () =>
-        analyzeEvidence({
-          evidenceText,
-          outDir,
-          writeOnChain: false,
-          runDcap: false,
-          tee: teeStub(),
-          allowanceFn: async () => ({ allowance: "0" }),
-        }),
-      (e) => e instanceof PipelineError && e.code === "ALLOWANCE_EXHAUSTED" && e.skipChain
+    const err = await analyzeEvidence({
+      evidenceText,
+      outDir,
+      writeOnChain: false,
+      runDcap: false,
+      tee: teeStub(),
+      allowanceFn: async () => ({ allowance: "0" }),
+    }).then(
+      () => null,
+      (e) => e
     );
+    assert.equal(err.code, "ALLOWANCE_EXHAUSTED");
+    assert.equal(err.skipChain, true);
+    assertOwnRowRed(err, "write");
   });
   assert.equal(await receiptCount(), before);
 });

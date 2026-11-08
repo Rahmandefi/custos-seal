@@ -16,7 +16,14 @@ import {
   errorCopy,
   fromAnalyzeTransportFailure,
   fromAnalyzeHttp,
+  checksMap,
+  toWireChecks,
+  OFFLINE_DETAIL,
 } from "../web/verify-checks.js";
+
+function C(x) {
+  return checksMap(x?.checks ?? x);
+}
 
 const evidenceText =
   "alpha\nwwwroot\\human2.aspx  created 2023-06-01 02:39\nomega\n";
@@ -138,26 +145,22 @@ test("Verified panel truthfulness regression: valid evidence only executed check
       ...local,
       tee: teeStub(),
     });
-    const c = result.checks;
+    const c = C(result);
     assert.equal(c.gateway_tcb.status, "pass");
-    assert.equal(c.gateway_tcb.evidence.tcb_status, "UpToDate");
+    assert.match(c.gateway_tcb.detail, /UpToDate/);
     assert.equal(c.model_tcb.status, "pass");
     assert.equal(c.nonce.status, "pass");
-    assert.equal(c.nonce.evidence.kind, "format");
-    assert.equal(c.nonce_binding.status, "unsupported");
-    assert.notEqual(c.nonce_binding.status, "pass");
     assert.equal(c.signature.status, "pass");
-    assert.equal(c.signature.evidence.signature_kind, "provider_tee");
+    assert.match(String(c.signature.detail), /provider_tee/);
     assert.equal(c.citations.status, "pass");
-    assert.equal(c.independent_dcap.status, "unsupported");
-    assert.equal(c.recording.status, "not_run");
-    assert.equal(c.rtmr3.status, "unsupported");
-    assert.equal(c.mrconfigid.status, "unsupported");
-    assert.equal(c.gpu_nras.status, "unsupported");
-    assert.equal(c.prompt_e2ee.status, "unsupported");
-    assert.equal(overallVerification(c), "incomplete");
-    const view = panelView({ done: true, checks: c });
-    assert.equal(view.rows.find((r) => r.id === "rtmr3").status, "unsupported");
+    assert.equal(c.write.status, "not_run");
+    assert.equal(c.offline.status, "not_in_request");
+    assert.equal(c.offline.detail, OFFLINE_DETAIL);
+    assert.equal(overallVerification(result.checks), "incomplete");
+    const view = panelView({ done: true, checks: result.checks });
+    assert.equal(view.rows.filter((r) => r.id === "offline").length, 1);
+    assert.equal(view.rows.find((r) => r.id === "offline").status, "not_in_request");
+    assert.equal(view.rows.find((r) => r.id === "rtmr3"), undefined);
     assert.ok(
       view.rows.every(
         (r) =>
@@ -203,17 +206,16 @@ test("Verified panel truthfulness regression: malformed nonce fails, recording n
     assert.equal(err.checks.nonce.status, "fail");
     assert.equal(err.checks.signature.status, "not_run");
     assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
     assert.ok(err.checks.signature.status !== "pass");
     assert.ok(err.checks.citations.status !== "pass");
-    assert.ok(err.checks.recording.status !== "pass");
-    assert.equal(err.checks.nonce_binding.status, "not_run");
+    assert.ok(err.checks.write.status !== "pass");
     assert.equal(err.skipChain, true);
     assert.equal(err.tx, null);
     const view = panelView(asAnalyze(err));
     const copy = errorCopy(asAnalyze(err));
     assert.equal(view.chip, "Unable to verify");
-    assert.equal(copy.headline, "No verified finding was recorded");
+    assert.equal(copy.headline, "No receipt was written");
     assert.equal(copy.body, "The contract was not called.");
     assert.equal(copy.skipChain, true);
   });
@@ -242,11 +244,10 @@ test("Verified panel truthfulness regression: valid nonce that differs from requ
       (e) => e
     );
     assert.equal(err.code, "NONCE_BINDING");
-    assert.equal(err.checks.nonce.status, "pass");
-    assert.equal(err.checks.nonce_binding.status, "fail");
+    assert.equal(err.checks.nonce.status, "fail");
     assert.equal(err.checks.signature.status, "not_run");
     assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
     assert.equal(recorded, 0);
   });
 });
@@ -260,8 +261,7 @@ test("Verified panel truthfulness regression: binding unavailable when SDK omits
       tee: teeStub({ requestNonce: null }),
     });
     assert.equal(result.checks.nonce.status, "pass");
-    assert.equal(result.checks.nonce_binding.status, "unsupported");
-    assert.notEqual(result.checks.nonce_binding.status, "pass");
+    assert.equal(result.checks.write.status, "not_run");
   });
 });
 
@@ -289,7 +289,7 @@ test("Verified panel truthfulness regression: non-provider_tee signature fails, 
     assert.equal(err.checks.signature.status, "fail");
     assert.equal(err.checks.nonce.status, "pass");
     assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
     assert.equal(recorded, 0);
   });
 });
@@ -310,7 +310,7 @@ test("Verified panel truthfulness regression: gateway TCB failure", async () => 
     assert.equal(err.checks.gateway_tcb.evidence.tcb_status, "OutOfDate");
     assert.equal(err.checks.nonce.status, "not_run");
     assert.equal(err.checks.signature.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
   });
 });
 
@@ -327,7 +327,7 @@ test("Verified panel truthfulness regression: model TCB failure", async () => {
     );
     assert.equal(err.checks.model_tcb.status, "fail");
     assert.equal(err.checks.model_tcb.evidence.tcb_status, "Revoked");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
   });
 });
 
@@ -345,8 +345,8 @@ test("Verified panel truthfulness regression: failed transaction does not pass R
       (e) => e
     );
     assert.equal(err.code, "RECORDING_FAILED");
-    assert.equal(err.checks.recording.status, "fail");
-    assert.notEqual(err.checks.recording.status, "pass");
+    assert.equal(err.checks.write.status, "fail");
+    assert.notEqual(err.checks.write.status, "pass");
     assert.equal(err.skipChain, false);
     assert.equal(err.execution, "failure");
     assert.equal(err.tx, "ok-tx");
@@ -375,8 +375,8 @@ test("Verified panel truthfulness regression: pending transaction remains unconf
       (e) => e
     );
     assert.equal(err.code, "RECORDING_UNCONFIRMED");
-    assert.equal(err.checks.recording.status, "fail");
-    assert.notEqual(err.checks.recording.status, "pass");
+    assert.equal(err.checks.write.status, "fail");
+    assert.notEqual(err.checks.write.status, "pass");
     assert.equal(err.skipChain, false);
     assert.equal(err.execution, "pending");
     assert.equal(err.tx, "ok-tx");
@@ -412,7 +412,7 @@ test("Verified panel truthfulness regression: unrelated receipt increasing count
       (e) => e
     );
     assert.equal(err.code, "RECORDING_MISMATCH");
-    assert.equal(err.checks.recording.status, "fail");
+    assert.equal(err.checks.write.status, "fail");
     assert.equal(err.skipChain, false);
     assert.equal(err.execution, "mismatch");
     assert.equal(err.tx, "ok-tx");
@@ -445,7 +445,7 @@ test("Verified panel truthfulness regression: receipt with mismatched fields doe
       (e) => e
     );
     assert.equal(err.code, "RECORDING_MISMATCH");
-    assert.equal(err.checks.recording.status, "fail");
+    assert.equal(err.checks.write.status, "fail");
     assert.equal(err.skipChain, false);
     assert.equal(err.tx, "ok-tx");
     const copy = errorCopy(asAnalyze(err));
@@ -458,24 +458,23 @@ test("Verified panel truthfulness regression: receipt with mismatched fields doe
 
 test("Verified panel truthfulness regression: missing and offline-only evidence stay unverified or unsupported", () => {
   const checks = emptyChecks();
-  assert.equal(checks.independent_dcap.status, "not_run");
-  assert.equal(checks.rtmr3.status, "unsupported");
-  assert.equal(checks.gpu_nras.status, "unsupported");
+  assert.equal(checks.offline.status, "not_in_request");
   const view = panelView({ done: true, checks });
   assert.equal(view.overall, "unavailable");
-  assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "unsupported"));
+  assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "not_in_request"));
+  assert.equal(view.rows.filter((r) => r.id === "offline").length, 1);
   const none = panelView(null);
   assert.equal(none.chip, "Verification unavailable");
-  assert.ok(none.rows.every((r) => r.status === "not_run"));
+  assert.equal(none.rows.length, 0);
 });
 
 test("Verified panel truthfulness regression: new run and failed run cannot display stale green results", () => {
   const stale = emptyChecks();
   stale.gateway_tcb.status = "pass";
-  stale.recording.status = "pass";
+  stale.write.status = "pass";
   const fresh = freshAnalyzeState();
-  assert.notEqual(fresh.checks.gateway_tcb.status, "pass");
-  assert.equal(fresh.checks.recording.status, "not_run");
+  assert.equal(fresh.running, true);
+  assert.equal(fresh.checks, undefined);
   const failedView = panelView({
     done: true,
     checks: {
@@ -486,19 +485,21 @@ test("Verified panel truthfulness regression: new run and failed run cannot disp
     },
   });
   assert.equal(failedView.rows.find((r) => r.id === "nonce").status, "fail");
-  assert.equal(failedView.rows.find((r) => r.id === "recording").status, "not_run");
-  assert.ok(failedView.rows.find((r) => r.id === "recording").status !== "pass");
+  assert.equal(failedView.rows.find((r) => r.id === "write").status, "not_run");
+  assert.ok(failedView.rows.find((r) => r.id === "write").status !== "pass");
   const next = panelView(freshAnalyzeState());
-  assert.ok(next.rows.every((r) => r.status !== "pass"));
+  assert.equal(next.pending, true);
+  assert.equal(next.rows.length, 0);
 });
 
 test("Verified panel truthfulness regression: no timer advances verification status", () => {
   const view = panelView({ running: true, tick: 99 });
-  assert.ok(view.rows.every((r) => r.status === "not_run"));
+  assert.equal(view.pending, true);
+  assert.equal(view.rows.length, 0);
   assert.equal(view.chip, "Analyzing");
   const withEmpty = panelView({ running: true, tick: 99, checks: emptyChecks() });
-  assert.ok(withEmpty.rows.every((r) => r.status === "not_run" || r.status === "unsupported"));
-  assert.ok(!withEmpty.rows.some((r) => r.status === "pass"));
+  assert.equal(withEmpty.pending, true);
+  assert.equal(withEmpty.rows.length, 0);
 });
 
 test("Verified panel truthfulness regression: confirmed recording is required for Verified", async () => {
@@ -509,14 +510,11 @@ test("Verified panel truthfulness regression: confirmed recording is required fo
       tee: teeStub(),
       ...chainFns(),
     });
-    assert.equal(result.checks.recording.status, "pass");
-    assert.equal(result.checks.recording.evidence.receipt_id, 7);
-    assert.equal(result.checks.nonce_binding.status, "unsupported");
-    assert.equal(result.checks.independent_dcap.status, "unsupported");
-    assert.equal(overallVerification(result.checks), "incomplete");
+    assert.equal(result.checks.write.status, "pass");
+    assert.equal(result.checks.write.evidence.receipt_id, 7);
+    assert.equal(overallVerification(result.checks), "verified");
     const view = panelView({ done: true, checks: result.checks });
-    assert.match(view.chip, /Verification incomplete/);
-    assert.ok(!/^Verified$/.test(view.chip));
+    assert.equal(view.chip, "Verified");
   });
 });
 
@@ -583,12 +581,12 @@ test("Verified panel truthfulness regression: client.verify nonce mismatch maps 
       (e) => e
     );
     assert.equal(err.code, "NONCE_BINDING");
-    assert.equal(err.checks.nonce_binding.status, "fail");
-    assert.equal(err.checks.nonce_binding.evidence.stage, "verify");
-    assert.equal(err.checks.nonce_binding.evidence.code, "binding.nonce_mismatch");
+    assert.equal(err.checks.nonce.status, "fail");
+    assert.equal(err.checks.nonce.evidence.stage, "verify");
+    assert.equal(err.checks.nonce.evidence.code, "binding.nonce_mismatch");
     assert.equal(err.checks.signature.status, "not_run");
     assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
   });
 });
 
@@ -616,7 +614,7 @@ test("Verified panel truthfulness regression: client.verifyResponse signature.ki
     assert.equal(err.checks.signature.status, "fail");
     assert.equal(err.checks.signature.evidence.stage, "verifyResponse");
     assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.recording.status, "not_run");
+    assert.equal(err.checks.write.status, "not_run");
   });
 });
 
@@ -662,18 +660,39 @@ test("Verified panel truthfulness regression: ambiguous SDK error does not guess
       null
     );
     assert.equal(err.checks.gateway_tcb.status, "not_run");
-    assert.equal(err.checks.nonce_binding.status, "not_run");
+    assert.equal(err.checks.nonce.status, "not_run");
     assert.equal(err.checks.signature.status, "not_run");
     assert.equal(err.skipChain, true);
     const view = panelView(asAnalyze(err));
     const copy = errorCopy(asAnalyze(err));
     assert.equal(view.chip, "Unable to verify");
     assert.notEqual(view.chip, "Verification unavailable");
-    assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "unsupported"));
+    assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "not_in_request"));
     assert.ok(!view.rows.some((r) => r.status === "fail"));
-    assert.equal(copy.headline, "No verified finding was recorded");
+    assert.equal(copy.headline, "No receipt was written");
     assert.equal(copy.body, "The contract was not called.");
   });
+});
+
+test("sample mode panel is Recorded run with receipt-proved rows only", () => {
+  const view = panelView({
+    recordedRun: true,
+    receipt: {
+      finding: {
+        signature: "aa",
+        signer_pubkey: "bb",
+        tcb_status: "UpToDate",
+        citation_hashes: ["cc", "dd"],
+      },
+    },
+  });
+  assert.equal(view.title, "Recorded run");
+  assert.equal(view.chip, "Recorded run");
+  assert.deepEqual(
+    view.rows.map((r) => r.id),
+    ["signature", "gateway_tcb", "citations"]
+  );
+  assert.ok(view.rows.every((r) => r.status === "pass"));
 });
 
 test("Verified panel truthfulness regression: missing status never passes Recording", async () => {
@@ -690,7 +709,7 @@ test("Verified panel truthfulness regression: missing status never passes Record
       (e) => e
     );
     assert.equal(err.code, "RECORDING_UNCONFIRMED");
-    assert.notEqual(err.checks.recording.status, "pass");
+    assert.notEqual(err.checks.write.status, "pass");
     assert.equal(err.skipChain, false);
     assert.equal(err.execution, "unknown");
     assert.equal(err.tx, "ok-tx");

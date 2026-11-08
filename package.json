@@ -13,6 +13,7 @@
     "test:policy": "node --test src/policy.test.mjs",
     "test:pipeline": "node --test src/pipeline.test.mjs",
     "test:verified-panel": "node --test src/verified-panel.test.mjs",
+    "test:verify-checks": "node --test web/verify-checks.test.mjs",
     "test:analyze-log": "node --test src/analyze-log.test.mjs",
     "test:writer-allowance": "node --test src/writer-allowance.test.mjs",
     "test:writer-identity": "node --test src/writer-identity.test.mjs",

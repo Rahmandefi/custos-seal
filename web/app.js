@@ -58,6 +58,7 @@ import {
   addCase,
   newCaseId,
   callerCaseIds,
+  SAMPLE_CASE_ID,
 } from "./cases.js?v=__ASSET_V__";
 
 const P = {
@@ -428,7 +429,7 @@ function tree(active) {
         return html || `<div class="tg">No matches for '${esc(state.filterQ)}'</div>`;
       })()}
     </div>
-    <div class="sfoot">${svg("lock", 13)}Evidence stays in this browser; the server stores nothing</div>
+    <div class="sfoot">${svg("lock", 13)}Evidence and salt stay in this tab; the server stores nothing</div>
   </aside>`;
 }
 
@@ -768,28 +769,42 @@ function checkRowHtml(row) {
       : row.status === "fail"
         ? svg("x", 13, 2.6)
         : "·";
-  const ev = row.evidence
-    ? Object.entries(row.evidence)
-        .filter(([, v]) => v != null && v !== "")
-        .map(([k, v]) => `${k} ${v}`)
-        .join(" · ")
-    : "";
-  const note =
-    row.status === "unsupported"
-      ? row.reason || "Not established in this request"
-      : row.status === "not_run"
-        ? row.reason || "Unverified"
-        : row.reason || ev;
-  const extra = row.status === "pass" && ev ? ev : "";
-  return `<div class="stp ${cls}"><span class="dot2">${mark}</span><div class="st1">${esc(row.title)}</div><div class="st2 mut">${esc([note, extra].filter(Boolean).join(" · ") || row.status)}</div></div>`;
+  const title = row.label || row.title;
+  const note = row.detail || row.reason || row.status;
+  const heading = row.href
+    ? `<a class="lnk" href="${esc(row.href)}" target="_blank" rel="noreferrer">${esc(title)}</a>`
+    : esc(title);
+  return `<div class="stp ${cls}"><span class="dot2">${mark}</span><div class="st1">${heading}</div><div class="st2 mut">${esc(note)}</div></div>`;
+}
+
+function sampleFindingReceipt() {
+  const list = state.status?.receipts || [];
+  return (
+    list.find((r) => r.case_id === SAMPLE_CASE_ID && kindLabel(r.kind) === "Finding") ||
+    list.find((r) => r.case_id === SAMPLE_CASE_ID) ||
+    null
+  );
 }
 
 function viewAnalyze() {
   const a = state.analyze;
-  const view = panelView(a);
-  const rows = view.rows.map(checkRowHtml).join("");
+  const sampleMode =
+    (state.walk.source === "sample" || state.setup.source === "sample") &&
+    !a?.done &&
+    !a?.running &&
+    !a?.error;
+  const view = sampleMode
+    ? panelView({ recordedRun: true, receipt: sampleFindingReceipt() })
+    : panelView(a);
+  const rows = view.pending ? "" : view.rows.map(checkRowHtml).join("");
   const overallOk = view.overall === "verified";
   const copy = errorCopy(a) || {};
+  const panelTitle = view.title || (sampleMode ? "Recorded run" : "Verified panel");
+  const panelBody = view.pending
+    ? `<div class="card strip"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Analyzing…")}</p></div>`
+    : `<div class="card strip"><div class="sl">${esc(panelTitle)}</div>${
+        view.headline ? `<p class="lede">${esc(view.headline)}</p>` : ""
+      }<div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>`;
   const result = a?.done
     ? a.error || view.overall === "failed"
       ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
@@ -815,7 +830,7 @@ function viewAnalyze() {
     "analyze",
     crumb("Analysis"),
     null,
-    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. Independent DCAP, RTMR3, MRCONFIGID, NRAS, and encryption stay labelled when they are not established here.</p></div></div>
+    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. REPORTDATA, RTMR3, MRCONFIGID, and NRAS are one offline line: npm run verify.</p></div></div>
     <div class="card" style="padding:18px 20px">
       <form id="analyze-form">
         <label class="dl" for="ev">Evidence file</label>
@@ -831,7 +846,7 @@ function viewAnalyze() {
         }
       </form>
     </div>
-    <div class="card strip"><div class="sl">Verified panel</div><div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>
+    ${panelBody}
     ${result}`
   );
 }
@@ -1828,12 +1843,19 @@ function bind() {
       if (!file) return;
       state.analyze = freshAnalyzeState();
       render();
+      const countBefore = Number(state.status?.chain_receipt_count ?? state.status?.receipt_count ?? 0);
+      const caseId = state.walk.caseId || state.cases.currentId || "";
+      const idsBefore = new Set(
+        (state.status?.receipts || [])
+          .filter((r) => caseId && String(r.case_id) === String(caseId))
+          .map((r) => Number(r.id))
+      );
       try {
         const res = await fetch("/analyze", {
           method: "POST",
           headers: writeHeaders({
             "Content-Type": "application/octet-stream",
-            "X-Case-Id": state.walk.caseId || state.cases.currentId || "",
+            "X-Case-Id": caseId,
           }),
           body: await file.arrayBuffer(),
         });
@@ -1874,12 +1896,24 @@ function bind() {
         }
       } catch (err) {
         const timeout = err?.name === "AbortError" || /timeout/i.test(String(err.message || err));
+        try {
+          await loadStatus();
+        } catch {
+          /* still report unknown */
+        }
+        const countAfter = Number(state.status?.chain_receipt_count ?? state.status?.receipt_count ?? countBefore);
+        const newForCase = (state.status?.receipts || []).some(
+          (r) => caseId && String(r.case_id) === String(caseId) && !idsBefore.has(Number(r.id))
+        );
         state.analyze = fromAnalyzeTransportFailure({
           kind: timeout ? "timeout" : "network",
           error: err,
           tx: state.analyze?.tx || null,
           checks: state.analyze?.checks,
         });
+        state.analyze.receipt_count_before = countBefore;
+        state.analyze.receipt_count_after = countAfter;
+        state.analyze.new_receipt_for_case = newForCase;
         state.walk.analyzeError = state.analyze.error;
       }
       render();
