@@ -1,4 +1,4 @@
-# Private Forensic Triage Assistant: Build Framework
+# Custos Seal · Private Forensic Triage Assistant: Build Framework
 
 **NEAR Hackathon entry · Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`)**
 Prepared Wed Nov 4, 2026 (Lagos, UTC+1). Submissions close **Nov 14, 2026, 23:59 UTC** (Nov 15, 00:59 Lagos). Judging Nov 16-18, 2026.

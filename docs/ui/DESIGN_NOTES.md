@@ -1,6 +1,6 @@
 # Design notes: UI mock-ups v2
 
-Private Forensic Triage Assistant (NEAR hackathon entry). **All case data, accounts, balances and hashes in the mock-ups are FICTIONAL / illustrative.**
+Custos Seal · Private Forensic Triage Assistant (NEAR hackathon entry). **All case data, accounts, balances and hashes in the mock-ups are FICTIONAL / illustrative.**
 The v1 sketches (`*.html`, `preview-*.png`, `src/`) are kept unchanged. The v1 notes are preserved in `DESIGN_NOTES.v1.md`.
 
 ## Deliverables (each 3200×2000 PNG, rendered at 2x from 1600×1000 CSS px with headless Chrome)

@@ -1,4 +1,4 @@
-# Private Forensic Triage Assistant: Screen Structure
+# Custos Seal · Private Forensic Triage Assistant: Screen Structure
 
 A screen-by-screen layout for the front end. Design principle: the case is the home, the timeline is the spine, and every claim sits next to its evidence. Blockchain terms stay out of the main UI: say "custody log", with a small "view transaction" link.
 

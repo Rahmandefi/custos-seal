@@ -1,8 +1,8 @@
 {
-  "name": "forensic-triage",
+  "name": "custos-seal",
   "version": "0.1.0",
   "private": true,
-  "description": "Private forensic triage: attested TEE analysis + NEAR custody receipts",
+  "description": "Custos Seal: Private Forensic Triage Assistant. Attested TEE analysis + NEAR custody receipts",
   "type": "module",
   "engines": {
     "node": ">=22"

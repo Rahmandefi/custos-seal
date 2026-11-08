@@ -1,4 +1,4 @@
-# Private Forensic Triage Assistant
+# Custos Seal · Private Forensic Triage Assistant
 
 Investigator uploads sensitive evidence. A model analyzes it inside a confidential TEE on NEAR AI Cloud. Each finding is a signed, timestamped custody receipt on a NEAR contract, with citations checked byte-for-byte against the source.
 
@@ -7,7 +7,7 @@ Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). 
 ## Verify without an API key (screeners start here)
 
 ```bash
-# Prerequisites: Node 20+ (Node 24 fine). No NEAR AI key. No wallet.
+# Prerequisites: Node 22+ (this script does not load the inference SDK). No NEAR AI key. No wallet.
 npm ci
 npm run verify
 ```
@@ -99,11 +99,11 @@ Plaintext evidence exists only in memory during a request. The backend keeps cip
 
 ## Setup from scratch
 
-Node **≥ 24.22.1**. Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
+App `package.json` engines: Node **≥ 22**. `@nearai/inference-sdk` 0.2.1 requires Node **≥ 24.22.1** for TEE scripts (`verify-one`, `npm run server`). Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
 
 ```bash
-git clone <repo>
-cd forensic-triage
+git clone https://github.com/Rahmandefi/custos-seal.git
+cd custos-seal
 source ~/.nvm/nvm.sh && nvm install 24.22.1 && nvm use 24.22.1
 npm install
 
@@ -120,7 +120,7 @@ npm run server
 In another terminal:
 
 ```bash
-cd forensic-triage
+cd custos-seal
 curl -sS --data-binary @samples/larkmoor-listing.txt \
   http://127.0.0.1:8787/analyze | tee /tmp/ft-analyze.json
 ```
@@ -148,11 +148,11 @@ Screens follow `docs/ui/SCREENS.md` and `docs/ui/DESIGN_NOTES.md`: dark icon rai
 
 ## Do X → see Y
 
-Requires Node **≥ 24.22.1**. This machine: `nvm install 24.22.1`.
+Requires Node **≥ 24.22.1** for TEE steps (SDK engines). `npm run verify` and `npm run test:policy` also run on Node **≥ 22**.
 
 ```bash
-git clone <repo>
-cd forensic-triage
+git clone https://github.com/Rahmandefi/custos-seal.git
+cd custos-seal
 nvm use 24.22.1
 npm install
 ```
@@ -235,12 +235,17 @@ See: TCB / not `provider_tee` / citation mismatch / reused nonce / allowance 0 a
 
 | Piece | Version |
 | --- | --- |
-| `@nearai/inference-sdk` | 0.2.1 (Node entry) |
-| `dcap-qvl` | 0.7.1 |
-| `near-sdk` | 5.30.0 (planned) |
+| Node | `>=22` in `package.json` engines; `@nearai/inference-sdk` 0.2.1 requires `>=24.22.1` |
+| `@nearai/inference-sdk` | 0.2.1 (Node entry; `engines.node` `>=24.22.1`) |
+| `near-api-js` | ^7.4.0 |
+| `pdf-lib` | ^1.17.1 |
+| `tweetnacl` | ^1.0.3 |
+| `dcap-qvl` | 0.7.1 (`requirements-verify.txt`) |
+| `near-sdk` | 5.30.0 (`contracts/custody/Cargo.toml`) |
+| `ed25519-dalek` | 2 (contract dev-dependency) |
 | Model | `z-ai/glm-5.3-flash` (canonical; not the GLM-5.1-FP8 alias) |
 
-Third-party libraries so far: `@nearai/inference-sdk`, `dcap-qvl`.
+npm dependencies: `@nearai/inference-sdk`, `near-api-js`, `pdf-lib`, `tweetnacl`. Python verify extra: `dcap-qvl`. Contract: `near-sdk` 5.30.0.
 
 ## Samples
 
