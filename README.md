@@ -7,7 +7,7 @@ Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). 
 ## Verify without an API key (screeners start here)
 
 ```bash
-# Prerequisites: Node 22+ (this script does not load the inference SDK). No NEAR AI key. No wallet.
+# View-only (tested on Node 22+). Full demo: Node ≥ 24.22.1. No NEAR AI key. No wallet.
 npm ci
 npm run verify
 ```
@@ -99,7 +99,7 @@ Plaintext evidence exists only in memory during a request. The backend keeps cip
 
 ## Setup from scratch
 
-App `package.json` engines: Node **≥ 22**. `@nearai/inference-sdk` 0.2.1 requires Node **≥ 24.22.1** for TEE scripts (`verify-one`, `npm run server`). Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
+Recommended full-demo runtime: Node **≥ 24.22.1** (`@nearai/inference-sdk` 0.2.1 engines; use this for `verify-one` and `npm run server`). Node **22** is only for the tested view-only commands `npm run verify` and `npm run test:policy`. App `package.json` engines remain `>=22`. Writer function-call key lives outside the repo at `~/.near-credentials/testnet/ftwriter-fncall.json` (never git). NEAR AI key goes only in `.env`.
 
 ```bash
 git clone https://github.com/Rahmandefi/custos-seal.git
@@ -148,7 +148,7 @@ Screens follow `docs/ui/SCREENS.md` and `docs/ui/DESIGN_NOTES.md`: dark icon rai
 
 ## Do X → see Y
 
-Requires Node **≥ 24.22.1** for TEE steps (SDK engines). `npm run verify` and `npm run test:policy` also run on Node **≥ 22**.
+Recommended full-demo runtime: Node **≥ 24.22.1**. Node **22** is limited to view-only `npm run verify` and `npm run test:policy`.
 
 ```bash
 git clone https://github.com/Rahmandefi/custos-seal.git
@@ -235,7 +235,7 @@ See: TCB / not `provider_tee` / citation mismatch / reused nonce / allowance 0 a
 
 | Piece | Version |
 | --- | --- |
-| Node | `>=22` in `package.json` engines; `@nearai/inference-sdk` 0.2.1 requires `>=24.22.1` |
+| Node | Recommended full demo **≥ 24.22.1**. Node 22 is view-only (`verify`, `test:policy`). `package.json` engines `>=22`. |
 | `@nearai/inference-sdk` | 0.2.1 (Node entry; `engines.node` `>=24.22.1`) |
 | `near-api-js` | ^7.4.0 |
 | `pdf-lib` | ^1.17.1 |
