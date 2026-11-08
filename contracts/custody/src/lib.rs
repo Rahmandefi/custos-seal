@@ -3,6 +3,12 @@ use near_sdk::{env, near, AccountId, BorshStorageKey, NearToken, PanicOnDefault}
 
 const OPEN_DEPOSIT: NearToken = NearToken::from_yoctonear(10_000_000_000_000_000_000); // 0.01 NEAR
 
+/// Extra keys, not fields on `CustodyContract`. Existing Borsh state (owner, writer,
+/// collection prefixes, receipts) is unchanged on upgrade. Cap 0 / missing keys =
+/// unlimited, so current testnet receipts keep working until the owner sets a cap.
+const DEMO_WRITE_CAP_KEY: &[u8] = b"v1/demo_write_cap";
+const DEMO_WRITES_KEY: &[u8] = b"v1/demo_writes";
+
 #[derive(BorshStorageKey)]
 #[near]
 enum Keys {
@@ -132,6 +138,7 @@ impl CustodyContract {
         verdict: Verdict,
     ) {
         assert_eq!(env::predecessor_account_id(), self.writer, "only writer");
+        self.consume_demo_write_slot();
         assert!(
             self.approved_signers.contains(&finding.signer_pubkey),
             "signer not approved"
@@ -283,6 +290,20 @@ impl CustodyContract {
     pub fn receipt_count(&self) -> u64 {
         self.receipts.len() as u64
     }
+
+    /// Owner-only. `0` disables the cap (unlimited). Does not rewrite receipts.
+    pub fn set_demo_write_cap(&mut self, cap: u64) {
+        self.require_owner();
+        env::storage_write(DEMO_WRITE_CAP_KEY, &cap.to_le_bytes());
+    }
+
+    pub fn demo_write_cap(&self) -> u64 {
+        load_u64(DEMO_WRITE_CAP_KEY)
+    }
+
+    pub fn demo_writes(&self) -> u64 {
+        load_u64(DEMO_WRITES_KEY)
+    }
 }
 
 impl CustodyContract {
@@ -306,6 +327,40 @@ impl CustodyContract {
         idx.push(id);
         self.case_index.insert(r.case_id, idx);
     }
+
+    /// Atomic in a NEAR receipt: check and increment before the finding is stored.
+    fn consume_demo_write_slot(&mut self) {
+        let cap = load_u64(DEMO_WRITE_CAP_KEY);
+        if cap == 0 {
+            return;
+        }
+        let n = load_u64(DEMO_WRITES_KEY);
+        assert!(n < cap, "DEMO_WRITE_CAP");
+        env::storage_write(DEMO_WRITES_KEY, &(n + 1).to_le_bytes());
+    }
+}
+
+fn load_u64(key: &[u8]) -> u64 {
+    match env::storage_read(key) {
+        Some(v) if v.len() >= 8 => {
+            let mut b = [0u8; 8];
+            b.copy_from_slice(&v[..8]);
+            u64::from_le_bytes(b)
+        }
+        _ => 0,
+    }
+}
+
+/// Pure check-and-increment used by concurrent unit tests (mirrors on-chain order).
+pub fn try_consume_demo_slot(writes: &mut u64, cap: u64) -> bool {
+    if cap == 0 {
+        return true;
+    }
+    if *writes >= cap {
+        return false;
+    }
+    *writes += 1;
+    true
 }
 
 fn borsh_id(id: u64) -> Vec<u8> {
@@ -356,7 +411,10 @@ mod tests {
     }
 
     fn finding(sk: &SigningKey, pk: [u8; 32]) -> SignedFinding {
-        let (req, resp) = hashes();
+        finding_with(sk, pk, hashes())
+    }
+
+    fn finding_with(sk: &SigningKey, pk: [u8; 32], (req, resp): ([u8; 32], [u8; 32])) -> SignedFinding {
         let model = "z-ai/glm-5.3-flash";
         let text = signed_text(model, &req, &resp);
         let sig = sk.sign(text.as_bytes()).to_bytes();
@@ -457,5 +515,81 @@ mod tests {
         assert!(matches!(r1.kind, ReceiptKind::CustodyCheck));
         assert!(matches!(r1.policy_verdict, Some(Verdict::Block)));
         assert_ne!(r1.evidence_commitments[0], commit);
+    }
+
+    #[test]
+    fn demo_cap_zero_unlimited_and_receipts_preserved() {
+        let (sk, pk) = keypair();
+        let mut c = contract();
+        c.add_signer(pk);
+        testing_env!(ctx(accounts(1)).build());
+        c.record_finding("case-1".into(), vec![[9u8; 32]], finding(&sk, pk), Verdict::Accept);
+        assert_eq!(c.receipt_count(), 1);
+        assert_eq!(c.demo_write_cap(), 0);
+        assert_eq!(c.demo_writes(), 0);
+    }
+
+    #[test]
+    fn demo_cap_rejects_when_full() {
+        let (sk, pk) = keypair();
+        let mut c = contract();
+        c.set_demo_write_cap(1);
+        c.add_signer(pk);
+        testing_env!(ctx(accounts(1)).build());
+        c.record_finding(
+            "case-1".into(),
+            vec![[9u8; 32]],
+            finding_with(&sk, pk, ([1u8; 32], [10u8; 32])),
+            Verdict::Accept,
+        );
+        assert_eq!(c.demo_writes(), 1);
+        assert_eq!(c.receipt_count(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "DEMO_WRITE_CAP")]
+    fn demo_cap_second_write_rejected() {
+        let (sk, pk) = keypair();
+        let mut c = contract();
+        c.set_demo_write_cap(1);
+        c.add_signer(pk);
+        testing_env!(ctx(accounts(1)).build());
+        c.record_finding(
+            "case-1".into(),
+            vec![[9u8; 32]],
+            finding_with(&sk, pk, ([1u8; 32], [10u8; 32])),
+            Verdict::Accept,
+        );
+        c.record_finding(
+            "case-1".into(),
+            vec![[9u8; 32]],
+            finding_with(&sk, pk, ([1u8; 32], [11u8; 32])),
+            Verdict::Accept,
+        );
+    }
+
+    #[test]
+    fn concurrent_slots_at_cap() {
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+        let writes = Arc::new(Mutex::new(0u64));
+        let cap = 3u64;
+        let mut joins = vec![];
+        for _ in 0..12 {
+            let w = Arc::clone(&writes);
+            joins.push(thread::spawn(move || {
+                let mut ok = 0u32;
+                for _ in 0..8 {
+                    let mut g = w.lock().unwrap();
+                    if try_consume_demo_slot(&mut g, cap) {
+                        ok += 1;
+                    }
+                }
+                ok
+            }));
+        }
+        let accepted: u32 = joins.into_iter().map(|j| j.join().unwrap()).sum();
+        assert_eq!(accepted, 3);
+        assert_eq!(*writes.lock().unwrap(), 3);
     }
 }

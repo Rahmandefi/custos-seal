@@ -597,6 +597,23 @@ export async function analyzeEvidence({
   const allowance = await allowanceFn();
   if (
     !allowance ||
+    allowance.identityOk === false ||
+    allowance.identityCode === "WRITER_KEY_UNSAFE" ||
+    allowance.identityCode === "WRITER_KEY_UNVERIFIED"
+  ) {
+    const code =
+      allowance?.identityCode === "WRITER_KEY_UNSAFE"
+        ? "WRITER_KEY_UNSAFE"
+        : allowance?.identityCode === "WRITER_KEY_UNVERIFIED" ||
+            allowance?.error === "missing writer credentials"
+          ? "WRITER_KEY_UNVERIFIED"
+          : null;
+    if (code) {
+      throw new PipelineError(code, allowance.error || "writer key could not be verified", checks);
+    }
+  }
+  if (
+    !allowance ||
     allowance.error ||
     allowance.allowance == null ||
     allowance.allowance === ""

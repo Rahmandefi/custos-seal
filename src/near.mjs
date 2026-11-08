@@ -157,20 +157,76 @@ function runNear(args) {
   });
 }
 
-export async function writerAllowance({ rpcFn = rpc, keyFile = FNKEY } = {}) {
+const WRITER_METHODS_ALLOWED = new Set(["record_finding", "record_custody_check"]);
+
+export function writerIdentityFromAccessKey(publicKey, ak, expectedPublic = process.env.NEAR_WRITER_PUBLIC_KEY) {
+  const pin = expectedPublic && String(expectedPublic).trim();
+  if (!pin) {
+    return { ok: false, code: "WRITER_KEY_UNVERIFIED", error: "missing writer public key pin" };
+  }
+  if (!publicKey || publicKey !== pin) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer public key mismatch" };
+  }
+  const perm = ak?.permission;
+  if (perm === "FullAccess") {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer key is FullAccess" };
+  }
+  const fc = perm?.FunctionCall;
+  if (!fc) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer key is not FunctionCall" };
+  }
+  if (fc.receiver_id && CONTRACT && fc.receiver_id !== CONTRACT) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer receiver mismatch" };
+  }
+  const methods = Array.isArray(fc.method_names) ? fc.method_names : [];
+  if (methods.length === 0) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer methods unconstrained" };
+  }
+  if (!methods.includes("record_finding")) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "record_finding not permitted" };
+  }
+  if (methods.some((m) => !WRITER_METHODS_ALLOWED.has(m))) {
+    return { ok: false, code: "WRITER_KEY_UNSAFE", error: "writer methods outside allowlist" };
+  }
+  return {
+    ok: true,
+    publicKey,
+    receiver: fc.receiver_id,
+    methods,
+    allowance: fc.allowance ?? null,
+  };
+}
+
+export async function writerAllowance({
+  rpcFn = rpc,
+  keyFile = FNKEY,
+  expectedPublic = process.env.NEAR_WRITER_PUBLIC_KEY,
+} = {}) {
   const pk = await privateKeyFromEnvOrFile(
     "NEAR_WRITER_PRIVATE_KEY",
     "NEAR_WRITER_KEY_JSON",
     keyFile
   );
   if (!pk) {
-    return { publicKey: null, allowance: null, error: "missing writer credentials" };
+    return {
+      publicKey: null,
+      allowance: null,
+      identityOk: false,
+      identityCode: "WRITER_KEY_UNVERIFIED",
+      error: "missing writer credentials",
+    };
   }
   let publicKey;
   try {
     publicKey = KeyPair.fromString(pk).getPublicKey().toString();
   } catch {
-    return { publicKey: null, allowance: null, error: "invalid writer credentials" };
+    return {
+      publicKey: null,
+      allowance: null,
+      identityOk: false,
+      identityCode: "WRITER_KEY_UNVERIFIED",
+      error: "invalid writer credentials",
+    };
   }
   try {
     const ak = await rpcFn("query", {
@@ -179,13 +235,32 @@ export async function writerAllowance({ rpcFn = rpc, keyFile = FNKEY } = {}) {
       public_key: publicKey,
       finality: "final",
     });
+    const identity = writerIdentityFromAccessKey(publicKey, ak, expectedPublic);
     const allowance = ak?.permission?.FunctionCall?.allowance;
-    if (allowance == null) {
-      return { publicKey, allowance: null, error: "allowance not returned" };
+    if (!identity.ok) {
+      return {
+        publicKey,
+        allowance: allowance ?? null,
+        identityOk: false,
+        identityCode: identity.code,
+        error: identity.error,
+        methods: identity.methods,
+        raw: ak,
+      };
     }
-    return { publicKey, allowance, raw: ak };
+    if (allowance == null) {
+      return { publicKey, allowance: null, identityOk: true, error: "allowance not returned", raw: ak };
+    }
+    return {
+      publicKey,
+      allowance,
+      identityOk: true,
+      methods: identity.methods,
+      receiver: identity.receiver,
+      raw: ak,
+    };
   } catch {
-    return { publicKey, allowance: null, error: "allowance lookup failed" };
+    return { publicKey, allowance: null, identityOk: false, error: "allowance lookup failed" };
   }
 }
 

@@ -49,13 +49,19 @@ async function withWriterEnv(fn) {
   }
 }
 
-function mockRpc(allowance) {
+function mockRpc(allowance, methods = ["record_finding", "record_custody_check"]) {
   return async (method, params) => {
     assert.equal(method, "query");
     assert.equal(params.request_type, "view_access_key");
     return {
       nonce: 1,
-      permission: { FunctionCall: { allowance, receiver_id: "ftcust15e434.testnet" } },
+      permission: {
+        FunctionCall: {
+          allowance,
+          receiver_id: "ftcust15e434.testnet",
+          method_names: methods,
+        },
+      },
     };
   };
 }
@@ -70,6 +76,7 @@ test("writerAllowance uses NEAR_WRITER_PRIVATE_KEY without a credentials file", 
       const out = await writerAllowance({
         rpcFn: mockRpc("100000000000000000000000"),
         keyFile: join(tmpdir(), "missing-writer-key.json"),
+        expectedPublic: kp.getPublicKey().toString(),
       });
       assert.equal(out.error, undefined);
       assert.equal(out.allowance, "100000000000000000000000");
@@ -98,6 +105,7 @@ test("writerAllowance reads file-based credentials when env keys are unset", asy
         const out = await writerAllowance({
           rpcFn: mockRpc("250000000000000000000000"),
           keyFile,
+          expectedPublic: kp.getPublicKey().toString(),
         });
         assert.equal(out.error, undefined);
         assert.equal(out.allowance, "250000000000000000000000");
@@ -144,6 +152,7 @@ test("writerAllowance reports exhausted allowance", async () => {
       const out = await writerAllowance({
         rpcFn: mockRpc("0"),
         keyFile: join(tmpdir(), "missing-writer-key.json"),
+        expectedPublic: kp.getPublicKey().toString(),
       });
       assert.equal(out.error, undefined);
       assert.equal(out.allowance, "0");
