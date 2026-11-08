@@ -10,7 +10,9 @@ import { readFile, stat, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "../src/load-env.mjs";
+import { randomUUID } from "node:crypto";
 import { analyzeEvidence, PipelineError } from "../src/pipeline.mjs";
+import { logAnalyzeError } from "../src/analyze-log.mjs";
 import {
   CONTRACT,
   WRITER,
@@ -179,10 +181,12 @@ async function publishedSampleSalt() {
   return null;
 }
 
-async function handleAnalyze(req, forceHold) {
+async function handleAnalyze(req, forceHold, ctx) {
+  ctx.stage = "read_body";
   const raw = await readBody(req);
   let evidenceBytes;
   const ct = req.headers["content-type"] || "";
+  ctx.stage = "parse";
   if (ct.includes("application/json")) {
     const j = JSON.parse(raw.toString("utf8"));
     evidenceBytes = Buffer.from(j.evidence || j.text || "", "utf8");
@@ -190,17 +194,26 @@ async function handleAnalyze(req, forceHold) {
     evidenceBytes = raw;
   }
   if (!evidenceBytes.length) {
-    throw new PipelineError("EMPTY", "empty evidence");
+    const err = new PipelineError("EMPTY", "empty evidence");
+    err.stage = "parse";
+    throw err;
   }
   if (req.writeMode === "demo") {
+    ctx.stage = "demo_sample";
     if (!(await sampleBytesMatch(evidenceBytes))) {
       const err = new Error("demo mode accepts the sample file only");
       err.status = 403;
+      err.stage = "demo_sample";
       throw err;
     }
   }
+  ctx.stage = "config";
   const apiKey = process.env.NEAR_AI_API_KEY;
-  if (!apiKey) throw new Error("NEAR_AI_API_KEY missing");
+  if (!apiKey) {
+    const err = new Error("NEAR_AI_API_KEY missing");
+    err.stage = "config";
+    throw err;
+  }
   return analyzeEvidence({
     evidenceBytes,
     caseId: req.headers["x-case-id"] || "larkmoor-demo",
@@ -210,23 +223,41 @@ async function handleAnalyze(req, forceHold) {
     writeOnChain: true,
     runDcap: process.env.SKIP_DCAP !== "1",
     forceVerdict: forceHold ? "Hold" : undefined,
+    onStage: (s) => {
+      ctx.stage = s;
+    },
   });
 }
 
 export async function handleRequest(req, res) {
+  let analyzeCtx = null;
   try {
     await mkdir(OUT, { recursive: true });
     const pathOnly = (req.url || "/").split("?")[0];
+    if (req.method === "POST" && pathOnly === "/analyze") {
+      analyzeCtx = { attempt: randomUUID(), started: Date.now(), stage: "authorize" };
+    }
     if (req.method === "POST" && WRITE_PATHS.has(pathOnly)) {
       const gate = allowWrite(req, writeKind(pathOnly));
       if (!gate.ok) {
+        if (analyzeCtx) {
+          logAnalyzeError({
+            attempt: analyzeCtx.attempt,
+            stage: "authorize",
+            code: gate.error === "unauthorized" ? "UNAUTHORIZED" : "WRITE_DENIED",
+            elapsed_ms: Date.now() - analyzeCtx.started,
+          });
+        }
         json(res, gate.status, { error: gate.error });
         return;
       }
       req.writeMode = gate.mode;
     }
     if (req.method === "POST" && req.url === "/analyze") {
-      const result = await handleAnalyze(req, false);
+      if (!analyzeCtx) {
+        analyzeCtx = { attempt: randomUUID(), started: Date.now(), stage: "start" };
+      }
+      const result = await handleAnalyze(req, false, analyzeCtx);
       invalidateStatus();
       json(res, 200, {
         receipt_id: result.receiptId,
@@ -509,6 +540,14 @@ export async function handleRequest(req, res) {
     }
     json(res, 404, { error: "not found" });
   } catch (e) {
+    if (analyzeCtx) {
+      logAnalyzeError({
+        attempt: analyzeCtx.attempt,
+        stage: e.stage || analyzeCtx.stage || "unknown",
+        code: e.code || (e.status === 403 ? "FORBIDDEN" : "ERROR"),
+        elapsed_ms: Date.now() - analyzeCtx.started,
+      });
+    }
     const code = e.status || (e instanceof PipelineError ? 400 : 500);
     json(res, code, {
       error: e.message,

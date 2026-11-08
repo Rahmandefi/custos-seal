@@ -399,7 +399,14 @@ export async function analyzeEvidence({
   txStatusFn,
   dcapFn,
   sdk,
+  onStage,
 }) {
+  let stage = "start";
+  const mark = (s) => {
+    stage = s;
+    if (typeof onStage === "function") onStage(s);
+  };
+  try {
   const text = evidenceText ?? Buffer.from(evidenceBytes).toString("utf8");
   const bytes = evidenceBytes ?? Buffer.from(text, "utf8");
   const envSalt = process.env.CASE_SALT || process.env.EVIDENCE_SALT;
@@ -410,6 +417,7 @@ export async function analyzeEvidence({
 
   const checks = emptyChecks();
   let teeResult;
+  mark("tee");
   try {
     teeResult = tee
       ? await tee({ evidenceText: text, apiKey })
@@ -426,11 +434,13 @@ export async function analyzeEvidence({
     throw new PipelineError(
       mapped.pipelineCode,
       e.message || String(e),
-      checks
+      checks,
+      { stage: e.sdkStage || "tee" }
     );
   }
 
   const { attested, completion, verified, sig } = teeResult;
+  mark("tcb");
   const { gwTcb, modelTcb } = applyTcbChecks(checks, attested);
   if (checks.gateway_tcb.status === "fail" || checks.model_tcb.status === "fail") {
     const reason =
@@ -440,6 +450,7 @@ export async function analyzeEvidence({
     throw new PipelineError("TCB_NOT_UP_TO_DATE", reason, checks);
   }
 
+  mark("nonce");
   const modelNonce = extractNonce(attested.models?.[0]);
   const gatewayNonce = extractNonce(attested.gateway);
   await mkdir(outDir, { recursive: true });
@@ -463,6 +474,7 @@ export async function analyzeEvidence({
     evidence: { nonce: shortHex(nonceHex), kind: "format" },
   });
 
+  mark("nonce_binding");
   const requestNonce = attestationNonceHex(teeResult.requestNonce);
   if (!requestNonce) {
     setCheck(checks, "nonce_binding", "unsupported", {
@@ -481,6 +493,7 @@ export async function analyzeEvidence({
   }
   const nonceBytes = nonceToBytes(nonceHex);
 
+  mark("signature");
   if (verified?.signatureKind !== "provider_tee") {
     setCheck(checks, "signature", "fail", {
       reason: `signatureKind=${verified?.signatureKind || "missing"}`,
@@ -515,6 +528,7 @@ export async function analyzeEvidence({
     },
   });
 
+  mark("citations");
   const parsed = parseModelJson(completionText(completion));
   const policy = evaluate(
     parsed,
@@ -564,6 +578,7 @@ export async function analyzeEvidence({
   await writeFile(join(outDir, "gateway-report.json"), gwText);
   await writeFile(join(outDir, "model-report.json"), modelText);
 
+  mark("dcap");
   if (runDcap) {
     try {
       const dcapOut = dcapFn ? await dcapFn(outDir) : await runDcapQvl(outDir);
@@ -592,6 +607,7 @@ export async function analyzeEvidence({
   const signer = signerStr || fetchedSigner;
   const [modelId, reqHex, respHex] = signedText.split(":");
 
+  mark("allowance");
   const allowance = await allowanceFn();
   if (
     allowance.allowance === "0" ||
@@ -666,6 +682,7 @@ export async function analyzeEvidence({
   let receiptId = null;
   let storageBefore = null;
   let storageAfter = null;
+  mark("recording");
   if (writeOnChain) {
     if (!canRecord(checks)) {
       setCheck(checks, "recording", "not_run", { reason: "prior check did not pass" });
@@ -810,6 +827,12 @@ export async function analyzeEvidence({
     policy,
     checks,
   };
+  } catch (e) {
+    if (e && typeof e === "object" && !e.stage) {
+      e.stage = e.sdkStage || stage;
+    }
+    throw e;
+  }
 }
 
 export { writerAllowance };
