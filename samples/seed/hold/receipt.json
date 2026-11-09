@@ -1,0 +1,99 @@
+{
+  "model_id": "z-ai/glm-5.3-flash",
+  "completion_id": "2062ab06a245446dafacfc378bef84d8",
+  "signature_kind": "provider_tee",
+  "signed_text": "z-ai/glm-5.3-flash:d972f87e139e126733ea45ef1f0bfbaf8bc0f77e5ad0cd1ffb087024f20876fb:3afdd48bf87e5a455f3e5217938e99ce36d57a8c1ad2ac3561e8f8c1fdfc9b57",
+  "signature": "5a29883b5edfc148c6752c2e94823f75cb18d8fca22538d44f2f75937db261643cb4366dd7b5c9f98472423ab64354b1ba628ceb2db9b264668f7b2e4da31e02",
+  "signer_pubkey": "5a0210f2442c79355784f9de021985429561da5bacc3a4424b01ac52b7e0caff",
+  "request_hash": "d972f87e139e126733ea45ef1f0bfbaf8bc0f77e5ad0cd1ffb087024f20876fb",
+  "response_hash": "3afdd48bf87e5a455f3e5217938e99ce36d57a8c1ad2ac3561e8f8c1fdfc9b57",
+  "nonce": "74a583c8ed8a47b74d43f81eda0957238551e3efbe4938b17b0c1da1dc417d3e",
+  "gateway_nonce": "3fc0f508e34d54a4d935e14b89a7057f34e0dd857de6f36571d8ca495d98be99",
+  "model_nonce": "74a583c8ed8a47b74d43f81eda0957238551e3efbe4938b17b0c1da1dc417d3e",
+  "gateway_report_hash": "46ffa1dc6c16ce7cbfa06c929b5128c41112a4cc13b3c55a8571b80f986ef39b",
+  "model_report_hash": "7e1a74716dcee16156fdb4f80d50a58edec4ac850f157347c1dd39955cffa432",
+  "evidence_id": "E1",
+  "evidence_commitments": [
+    "95f096c58802008aec9b21ac1145ee037118b48a4411084b8039ecfe3e61e308"
+  ],
+  "finding_hash": "f97f6e6172b52590cb4219bedb9bd896627eac5f71e0b53e9adc408144ea8377",
+  "citation_hashes": [
+    "c49f24f26834cba2da3f3d915cffedc8a0a28a820b63b5cd526d9ab5ada56d39",
+    "9b6f7d22dccafbe8049ec597f41222975dfa17ba8d1a985144f4d6306bd8c218",
+    "f74d6edf25200fd08e58b40c202cc67e0b0502feeac9d1f4553f4bb98d8a22a4"
+  ],
+  "citation_records": [
+    {
+      "evidence_commitment": "95f096c58802008aec9b21ac1145ee037118b48a4411084b8039ecfe3e61e308",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 108,
+      "byte_end": 183,
+      "quote_sha256": "df5f8a4c0fbe220c26b8dd445405bcba04a9c826287077bb6ac8aaf414ef487c"
+    },
+    {
+      "evidence_commitment": "95f096c58802008aec9b21ac1145ee037118b48a4411084b8039ecfe3e61e308",
+      "line_start": 4,
+      "line_end": 4,
+      "byte_start": 184,
+      "byte_end": 216,
+      "quote_sha256": "e4b5135ad111b21a8bb0f04d439a9f675558f5ead16739da0d37d9edd0b72438"
+    },
+    {
+      "evidence_commitment": "95f096c58802008aec9b21ac1145ee037118b48a4411084b8039ecfe3e61e308",
+      "line_start": 5,
+      "line_end": 5,
+      "byte_start": 217,
+      "byte_end": 283,
+      "quote_sha256": "74a41329c4294567185138a2fc3c2de791ef2f0dfd2b3fc3ab0c886037e1dfc6"
+    }
+  ],
+  "policy_verdict": "HOLD",
+  "policy_reasons": [
+    "P4 irreversible action: isolate_host"
+  ],
+  "citations": [
+    {
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 108,
+      "byte_end": 183,
+      "quote": "host xfer-01 C:\\MOVEitTransfer\\wwwroot\\human2.aspx created 2023-06-01 02:39"
+    },
+    {
+      "evidence_id": "E1",
+      "line_start": 4,
+      "line_end": 4,
+      "byte_start": 184,
+      "byte_end": 216,
+      "quote": "RECOMMENDED ACTION: isolate_host"
+    },
+    {
+      "evidence_id": "E1",
+      "line_start": 5,
+      "line_end": 5,
+      "byte_start": 217,
+      "byte_end": 283,
+      "quote": "Isolate host xfer-01. Do not delete files. Do not notify_external."
+    }
+  ],
+  "finding": {
+    "claim": "Suspicious .aspx file (possible webshell) created in the MOVEit Transfer webroot on host xfer-01",
+    "citations": [
+      {
+        "evidence_id": "E1",
+        "line_start": 3,
+        "line_end": 3,
+        "quote": "host xfer-01 C:\\MOVEitTransfer\\wwwroot\\human2.aspx created 2023-06-01 02:39"
+      }
+    ],
+    "iocs": [
+      "xfer-01",
+      "C:\\MOVEitTransfer\\wwwroot\\human2.aspx"
+    ],
+    "recommended_actions": [],
+    "confidence": 0.85
+  },
+  "case_id": "larkmoor-sample-v2"
+}

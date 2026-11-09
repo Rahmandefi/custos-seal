@@ -13,6 +13,8 @@ import {
   README_HREF,
   freshAnalyzeState,
   errorCopy,
+  demoLimitFallbackAnalyze,
+  DEMO_LIMIT_BANNER,
 } from "./verify-checks.js";
 
 const evidenceText =
@@ -131,7 +133,7 @@ function assertCascade(view, failId, reasonRe) {
   const offline = view.rows.find((r) => r.id === "offline");
   assert.equal(offline.status, "not_in_request");
   assert.equal(offline.href, README_HREF);
-  assert.match(offline.label, /Independent offline check: npm run verify/);
+  assert.match(offline.label, /Independent offline check: scripts\/verify_report\.py/);
   const e2ee = view.rows.find((r) => r.id === "e2ee");
   assert.equal(e2ee.label, "Prompt encryption check");
   assert.match(e2ee.detail, /configured e2ee=true/);
@@ -290,6 +292,26 @@ test("UI: header chip idle / required passed / warn only on required fail", () =
     },
   });
   assert.equal(failed.tone, "bad");
+});
+
+test("UI: DEMO_LIMIT opens recorded sample run with rate-limit banner", () => {
+  const receipt = {
+    finding: {
+      signature: "aa",
+      signer_pubkey: "bb",
+      tcb_status: "UpToDate",
+      citation_hashes: ["cc"],
+    },
+  };
+  const analyze = demoLimitFallbackAnalyze(receipt);
+  assert.equal(analyze.demoLimitFallback, true);
+  assert.equal(analyze.recordedRun, true);
+  assert.equal(analyze.banner, DEMO_LIMIT_BANNER);
+  assert.match(analyze.banner, /Live analysis is rate-limited; showing a recorded real run/);
+  const view = panelView(analyze);
+  assert.equal(view.title, "Recorded run");
+  assert.equal(view.chip, "Recorded run");
+  assert.ok(view.rows.length >= 1);
 });
 
 test("UI: unknown failure reports whether a new receipt appeared for this case", () => {

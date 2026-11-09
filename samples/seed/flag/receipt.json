@@ -1,0 +1,101 @@
+{
+  "model_id": "z-ai/glm-5.3-flash",
+  "completion_id": "3354fcc068294cf5bcd9ad62f148bc45",
+  "signature_kind": "provider_tee",
+  "signed_text": "z-ai/glm-5.3-flash:897cd1805830dd3e0253b2ecd1ef1e131e69498b3d620f8130dde391f903d0b6:d1901051739deb4a579d11dcf4ecbd3e3a37ad72815628a99a6cdb1256e4e18d",
+  "signature": "5794351d7c981866c6c1a37ff1ceed243ba7b084840a3345e651bcabe15e68879e82143e086429612eaeef8aeb36b2fcffba35a5b1a9325d3d940a5202820004",
+  "signer_pubkey": "5a0210f2442c79355784f9de021985429561da5bacc3a4424b01ac52b7e0caff",
+  "request_hash": "897cd1805830dd3e0253b2ecd1ef1e131e69498b3d620f8130dde391f903d0b6",
+  "response_hash": "d1901051739deb4a579d11dcf4ecbd3e3a37ad72815628a99a6cdb1256e4e18d",
+  "nonce": "d408c927bdfc0fa91ea41fa99b2b7e768dc1f01c8475c920ad0e987b6ff0bfef",
+  "gateway_nonce": "11a2400ea52285acfa7dfa84b679554741c973026310254f6350533d516659e3",
+  "model_nonce": "d408c927bdfc0fa91ea41fa99b2b7e768dc1f01c8475c920ad0e987b6ff0bfef",
+  "gateway_report_hash": "046cf8165d8e9570924d02be6b1329453d7c49b8bea765db828b58e92a2e0dee",
+  "model_report_hash": "395a12e9be9485787a11806458ad6fbbd7638152f03d91fac1fed5702ae81fb4",
+  "evidence_id": "E1",
+  "evidence_commitments": [
+    "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd"
+  ],
+  "finding_hash": "cc3353e5a9c784171038c2c7dff717673310131117dada4a482f21196aadb7fc",
+  "citation_hashes": [
+    "1b2ca8e0f360782f4b4eaaf641920dd62484c9831f53e1b7dc5785a92aa62d10",
+    "34ebfcff7404a29bc32b5f64c4a8417ff8d7d43d616f1743b88047e6e9d20349",
+    "c96d1111cf6c3ed84e9761dbccca045cd5b2196cd5995acb2f6276e220cff0a0"
+  ],
+  "citation_records": [
+    {
+      "evidence_commitment": "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 96,
+      "byte_end": 185,
+      "quote_sha256": "65f07f9b39e915364247779de8ce44815faa9c366d744c5ad00b35742052e629"
+    },
+    {
+      "evidence_commitment": "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd",
+      "line_start": 2,
+      "line_end": 2,
+      "byte_start": 46,
+      "byte_end": 95,
+      "quote_sha256": "0c0b3a0779c4eb4dc8051a40144850ed3c3285cc3a210f1100d1cf8cf091a10d"
+    },
+    {
+      "evidence_commitment": "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd",
+      "line_start": 1,
+      "line_end": 1,
+      "byte_start": 0,
+      "byte_end": 45,
+      "quote_sha256": "3f4d7998b0d123608a93e04db3f8b22da2c7bda5e8e89bad0a53570fb30bcf17"
+    }
+  ],
+  "policy_verdict": "HOLD",
+  "policy_reasons": [
+    "P4 irreversible action: isolate_host",
+    "P6 confidence 0.2 < 0.4"
+  ],
+  "citations": [
+    {
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 96,
+      "byte_end": 185,
+      "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)"
+    },
+    {
+      "evidence_id": "E1",
+      "line_start": 2,
+      "line_end": 2,
+      "byte_start": 46,
+      "byte_end": 95,
+      "quote": "# FICTIONAL SCENARIO: synthetic directory listing"
+    },
+    {
+      "evidence_id": "E1",
+      "line_start": 1,
+      "line_end": 1,
+      "byte_start": 0,
+      "byte_end": 45,
+      "quote": "# FICTIONAL SCENARIO: FOR DEMONSTRATION ONLY."
+    }
+  ],
+  "finding": {
+    "claim": "An ASPX file (human2.aspx) exists in the MOVEit Transfer wwwroot directory, is not part of the vendor baseline, and has a creation timestamp of 2023-06-01 02:39, consistent with an unauthorized web shell planted on the server.",
+    "citations": [
+      {
+        "evidence_id": "E1",
+        "line_start": 3,
+        "line_end": 3,
+        "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)"
+      }
+    ],
+    "iocs": [
+      "C:\\MOVEitTransfer\\wwwroot\\human2.aspx"
+    ],
+    "recommended_actions": [
+      "isolate_host"
+    ],
+    "confidence": 0.5
+  },
+  "case_id": "larkmoor-sample-v2"
+}

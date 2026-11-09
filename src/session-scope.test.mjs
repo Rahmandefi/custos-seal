@@ -32,7 +32,7 @@ test("operator Bearer sees everything", () => {
 });
 
 test("sample writes are blocked", () => {
-  assert.equal(sampleWriteBlocked("larkmoor-demo"), true);
+  assert.equal(sampleWriteBlocked(SAMPLE_CASE_ID), true);
   assert.equal(sampleWriteBlocked("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), false);
 });
 

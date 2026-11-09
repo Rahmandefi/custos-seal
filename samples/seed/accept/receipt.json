@@ -1,0 +1,68 @@
+{
+  "model_id": "z-ai/glm-5.3-flash",
+  "completion_id": "fe8214c66eac44d3b832a7b0931a5a9d",
+  "signature_kind": "provider_tee",
+  "signed_text": "z-ai/glm-5.3-flash:8409e224a1b977d304c3d423eac7f7c69098cdc33e2445a2b850f0f6b41b9a2b:1583d12201b6493cb38fb0b9480543bdd14c566dc3b9e2ae2cca33db164563a2",
+  "signature": "a5a3e62955427369dba67713eda794c92641f69f02eb8815fb8766b0e6260a3ec1650c5c933aaa83045516a658ed741f6d92097f928838acdd690feb6942d30f",
+  "signer_pubkey": "5a0210f2442c79355784f9de021985429561da5bacc3a4424b01ac52b7e0caff",
+  "request_hash": "8409e224a1b977d304c3d423eac7f7c69098cdc33e2445a2b850f0f6b41b9a2b",
+  "response_hash": "1583d12201b6493cb38fb0b9480543bdd14c566dc3b9e2ae2cca33db164563a2",
+  "nonce": "023dc55992bff8d8da6675ae3adbd953a41ea839cf9578c9b004a54f7fc00548",
+  "gateway_nonce": "8dc7872259e914315571839cdcb0a02de7eae0eb93bf10353b5f73f068ae9b1d",
+  "model_nonce": "023dc55992bff8d8da6675ae3adbd953a41ea839cf9578c9b004a54f7fc00548",
+  "gateway_report_hash": "6e8d5fe29ad1fa9ea87141cbec2f240d9bbf86d0e89a6b70d9506318c57456cd",
+  "model_report_hash": "f35c47d8339f574eff3865426447398d46ae42650db77acd150d2ad9343cfd59",
+  "evidence_id": "E1",
+  "evidence_commitments": [
+    "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd"
+  ],
+  "finding_hash": "0f5a8a8028cbecadbe5998862b6ec6d1dde52ebad2e6d5e92057d64d30a7dbb6",
+  "citation_hashes": [
+    "1b2ca8e0f360782f4b4eaaf641920dd62484c9831f53e1b7dc5785a92aa62d10"
+  ],
+  "citation_records": [
+    {
+      "evidence_commitment": "934196c408d862209d10dc715c3d6b41c138fc1d3d88b19a0885c1ee3494a7dd",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 96,
+      "byte_end": 185,
+      "quote_sha256": "65f07f9b39e915364247779de8ce44815faa9c366d744c5ad00b35742052e629"
+    }
+  ],
+  "policy_verdict": "HOLD",
+  "policy_reasons": [
+    "P4 irreversible action: delete"
+  ],
+  "citations": [
+    {
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3,
+      "byte_start": 96,
+      "byte_end": 185,
+      "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)"
+    }
+  ],
+  "finding": {
+    "claim": "An unauthorized file, human2.aspx, exists in the MOVEit Transfer webroot and is not part of the vendor baseline, consistent with a dropped webshell following exploitation of MOVEit Transfer (CVE-2023-34362 pattern).",
+    "citations": [
+      {
+        "evidence_id": "E1",
+        "line_start": 3,
+        "line_end": 3,
+        "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)"
+      }
+    ],
+    "iocs": [
+      "C:\\MOVEitTransfer\\wwwroot\\human2.aspx",
+      "human2.aspx",
+      "2023-06-01 02:39"
+    ],
+    "recommended_actions": [
+      "delete"
+    ],
+    "confidence": 0.72
+  },
+  "case_id": "larkmoor-sample-v2"
+}

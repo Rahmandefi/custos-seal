@@ -1,0 +1,29 @@
+{
+  "receipt_id": 18,
+  "case_id": "larkmoor-sample-v2",
+  "claim": "An ASPX file (human2.aspx) exists in the MOVEit Transfer wwwroot directory, is not part of the vendor baseline, and has a creation timestamp of 2023-06-01 02:39, consistent with an unauthorized web shell planted on the server.",
+  "citations": [
+    {
+      "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)",
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3
+    },
+    {
+      "quote": "# FICTIONAL SCENARIO: synthetic directory listing",
+      "evidence_id": "E1",
+      "line_start": 2,
+      "line_end": 2
+    },
+    {
+      "quote": "# FICTIONAL SCENARIO: FOR DEMONSTRATION ONLY.",
+      "evidence_id": "E1",
+      "line_start": 1,
+      "line_end": 1
+    }
+  ],
+  "actions": [
+    "isolate_host"
+  ],
+  "fictional": true
+}

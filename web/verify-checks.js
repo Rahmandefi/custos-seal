@@ -1,6 +1,7 @@
 /** Live Verified-panel checks. Only statuses the analysis request actually sets. */
 
-export const OFFLINE_DETAIL = "Independent offline check: npm run verify";
+export const OFFLINE_DETAIL =
+  "Independent offline check: scripts/verify_report.py (REPORTDATA / dcap-qvl)";
 export const README_HREF =
   "https://github.com/Rahmandefi/custos-seal/blob/master/README.md#verify-without-an-api-key-screeners-start-here";
 
@@ -25,7 +26,7 @@ export const E2EE_DETAIL =
 
 export const OFFLINE_CHECK = {
   id: "offline",
-  label: "Independent offline check: npm run verify",
+  label: "Independent offline check: scripts/verify_report.py (REPORTDATA / dcap-qvl)",
   href: README_HREF,
 };
 
@@ -588,4 +589,18 @@ export function panelView(analyze) {
 
 export function freshAnalyzeState() {
   return { running: true };
+}
+
+export const DEMO_LIMIT_BANNER =
+  "Live analysis is rate-limited; showing a recorded real run";
+
+/** When /analyze returns 429 DEMO_LIMIT, open the recorded sample run with a banner. */
+export function demoLimitFallbackAnalyze(receipt = null) {
+  return {
+    done: true,
+    recordedRun: true,
+    demoLimitFallback: true,
+    receipt: receipt || null,
+    banner: DEMO_LIMIT_BANNER,
+  };
 }

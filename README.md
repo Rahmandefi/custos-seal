@@ -14,13 +14,15 @@ npm ci
 npm run verify
 ```
 
-This replays the FICTIONAL `larkmoor-demo` sample against the live testnet contract
-`ftcust15e434.testnet` (or the contract id in `samples/contract.json` after redeploy).
-It checks evidence commitments, citation quotes, and ed25519 finding signatures.
-It does **not** call NEAR AI Cloud and does **not** send transactions.
+This verifies the FICTIONAL `larkmoor-sample-v2` sample against the live testnet
+contract `ftcust15e434.testnet` (or the contract id in `samples/contract.json`).
+It recomputes evidence commitments, finding_hash, and citation hashes from
+`samples/seed/`, and checks ed25519 finding signatures. It does **not** call
+NEAR AI Cloud and does **not** send transactions. Older development receipts on
+the same contract are noted and skipped.
 
-Receipt 0 on the current contract is a filler bootstrap (repeating hashes). The script
-skips hash checks for that id. A fresh seed (no filler) is TBD before freeze.
+REPORTDATA / quote checks remain offline via `scripts/verify_report.py` (dcap-qvl),
+not this command.
 
 Demo writes (`DEMO_MODE=1`) rate-limit per instance in memory and reset on cold start.
 
@@ -89,7 +91,7 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 ## What this repo does
 
-1. **Enclave-sealed analysis:** Confidential TEE only (`z-ai/glm-5.3-flash`). Attestation cache TTL 0 for freshness. Nonce binding is checked by the offline script (`npm run verify`), not live. Ed25519 + configured E2EE. TCB `UpToDate` only. The contract checks the enclave signature on-chain, not the attestation.
+1. **Enclave-sealed analysis:** Confidential TEE only (`z-ai/glm-5.3-flash`). Attestation cache TTL 0 for freshness. REPORTDATA / quote checks (including nonce material in the quote) are done offline by `scripts/verify_report.py` (dcap-qvl), not live and not by `npm run verify`. Ed25519 + configured E2EE. TCB `UpToDate` only. The contract checks the enclave signature on-chain, not the attestation.
 2. **Deterministic policy:** citations must match evidence byte-for-byte (R1). Schema, provenance, irreversible-action HOLD, injection markers, confidence floor.
 3. **On-chain receipts:** full signed receipt stored at creation; contract rebuilds signed text and runs `env::ed25519_verify` (R3).
 4. **Human in the loop:** isolate/block/delete/notify wait for an investigator-signed `approve_action`.
@@ -97,7 +99,10 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 Honest limits (NEAR docs): a `provider_tee` signature does not prove *which* GPU instance served the request; gateway + model evidence are not a complete cryptographic chain per response. We use non-streaming Chat Completions with a canonical model ID and `x-no-aliasing`. TDX quotes are verified off-chain; only hashes go on-chain.
 
-Evidence stays in this browser's sessionStorage; the server stores nothing.
+Evidence stays in this browser's sessionStorage. The server holds API and writer
+secrets in env, ephemeral per-request files under `OUT` / `/tmp` (seen-nonces,
+dumped attestation reports during analyze), and in-memory demo rate-limit
+counters that reset on cold start. The server keeps no evidence or findings.
 Receipts on chain are hashes, signed findings, and policy verdicts.
 `clearResponseCache()` runs after verification. Scoping is view isolation; the
 chain is public.
@@ -141,7 +146,12 @@ node scripts/verify-from-chain.mjs --id "$RID" --file samples/larkmoor-listing.t
 
 See: first command `"pass": true`; tamper `"pass": false`.
 
-Optional: `SKIP_DCAP=1` in `.env` skips `dcap-qvl` if you have not installed the venv.
+`SKIP_DCAP`: when the exact string `1`, `scripts/server.mjs` sets
+`runDcap: false`, so the analyze path skips the independent
+`scripts/verify_report.py` / dcap-qvl check of dumped Intel TDX quotes
+(REPORTDATA / quote collateral). It does **not** skip the live SDK
+gateway/model TCB checks. Production and Preview both define `SKIP_DCAP`
+(secret); treat a value of `1` as that offline quote step omitted on analyze.
 
 ### UI (evidence-room shell)
 

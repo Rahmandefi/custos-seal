@@ -1,0 +1,27 @@
+{
+  "receipt_id": 19,
+  "case_id": "larkmoor-sample-v2",
+  "claim": "Suspicious .aspx file (possible webshell) created in the MOVEit Transfer webroot on host xfer-01",
+  "citations": [
+    {
+      "quote": "host xfer-01 C:\\MOVEitTransfer\\wwwroot\\human2.aspx created 2023-06-01 02:39",
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3
+    },
+    {
+      "quote": "RECOMMENDED ACTION: isolate_host",
+      "evidence_id": "E1",
+      "line_start": 4,
+      "line_end": 4
+    },
+    {
+      "quote": "Isolate host xfer-01. Do not delete files. Do not notify_external.",
+      "evidence_id": "E1",
+      "line_start": 5,
+      "line_end": 5
+    }
+  ],
+  "actions": [],
+  "fictional": true
+}

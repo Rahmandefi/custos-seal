@@ -1,6 +1,6 @@
 /** Visitor-owned cases. IDs are 128-bit hex in localStorage. */
 export const CASES_LS = "custos-cases";
-export const SAMPLE_CASE_ID = "larkmoor-demo";
+export const SAMPLE_CASE_ID = "larkmoor-sample-v2";
 
 export function newCaseId() {
   const a = new Uint8Array(16);

@@ -1,0 +1,17 @@
+{
+  "receipt_id": 17,
+  "case_id": "larkmoor-sample-v2",
+  "claim": "An unauthorized file, human2.aspx, exists in the MOVEit Transfer webroot and is not part of the vendor baseline, consistent with a dropped webshell following exploitation of MOVEit Transfer (CVE-2023-34362 pattern).",
+  "citations": [
+    {
+      "quote": "C:\\MOVEitTransfer\\wwwroot\\human2.aspx  created 2023-06-01 02:39  (not in vendor baseline)",
+      "evidence_id": "E1",
+      "line_start": 3,
+      "line_end": 3
+    }
+  ],
+  "actions": [
+    "delete"
+  ],
+  "fictional": true
+}

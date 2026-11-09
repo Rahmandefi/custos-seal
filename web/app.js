@@ -36,7 +36,15 @@ import {
   signFunctionCall,
 } from "./wallet.js?v=__ASSET_V__";
 import { startGuidedTour } from "./tour.js?v=__ASSET_V__";
-import { panelView, freshAnalyzeState, errorCopy, fromAnalyzeTransportFailure, fromAnalyzeHttp } from "./verify-checks.js?v=__ASSET_V__";
+import {
+  panelView,
+  freshAnalyzeState,
+  errorCopy,
+  fromAnalyzeTransportFailure,
+  fromAnalyzeHttp,
+  demoLimitFallbackAnalyze,
+  DEMO_LIMIT_BANNER,
+} from "./verify-checks.js?v=__ASSET_V__";
 import {
   eventsEnabled,
   eventsContractId,
@@ -166,7 +174,7 @@ async function loadSampleIncident() {
   state.walk.source = "sample";
   state.walk.caseName = "Sample incident (FICTIONAL)";
   state.walk.caseDesc = "Shipped training case. Read-only.";
-  state.walk.caseId = "";
+  state.walk.caseId = SAMPLE_CASE_ID;
   persistWalk();
   const findings = await (await fetch("/api/sample/findings")).json();
   const map = {};
@@ -429,7 +437,7 @@ function tree(active) {
         return html || `<div class="tg">No matches for '${esc(state.filterQ)}'</div>`;
       })()}
     </div>
-    <div class="sfoot">${svg("lock", 13)}Evidence stays in this browser's sessionStorage; the server stores nothing</div>
+    <div class="sfoot">${svg("lock", 13)}Evidence stays in this browser's sessionStorage; the server keeps no evidence or findings</div>
   </aside>`;
 }
 
@@ -754,7 +762,7 @@ function viewWorkspace() {
       <aside class="card det">
         <div class="dh"><div class="eyebrow">Selected case</div><h2>${w.caseName || "Larkmoor Records Office"}</h2>
           <div class="dm">${w.caseDesc || "File-transfer breach"}</div></div>
-        <div class="dsec"><div class="dl">Evidence in this browser</div><p class="lede">Evidence stays in this browser's sessionStorage; the server stores nothing. The custody log stores fingerprints, not the file. The contract checks the enclave signature on-chain, not the attestation.</p></div>
+        <div class="dsec"><div class="dl">Evidence in this browser</div><p class="lede">Evidence stays in this browser's sessionStorage; the server keeps no evidence or findings. The custody log stores fingerprints, not the file. The contract checks the enclave signature on-chain, not the attestation.</p></div>
       </aside>
     </div>`
   );
@@ -788,24 +796,32 @@ function sampleFindingReceipt() {
 
 function viewAnalyze() {
   const a = state.analyze;
+  const demoFallback = Boolean(a?.demoLimitFallback);
   const sampleMode =
-    (state.walk.source === "sample" || state.setup.source === "sample") &&
-    !a?.done &&
-    !a?.running &&
-    !a?.error;
+    demoFallback ||
+    ((state.walk.source === "sample" || state.setup.source === "sample") &&
+      !a?.done &&
+      !a?.running &&
+      !a?.error);
+  const recordedReceipt = demoFallback ? a.receipt || sampleFindingReceipt() : sampleFindingReceipt();
   const view = sampleMode
-    ? panelView({ recordedRun: true, receipt: sampleFindingReceipt() })
+    ? panelView({ recordedRun: true, receipt: recordedReceipt })
     : panelView(a);
   const rows = view.pending ? "" : view.rows.map(checkRowHtml).join("");
   const overallOk = view.overall === "verified";
   const copy = errorCopy(a) || {};
   const panelTitle = view.title || (sampleMode ? "Recorded run" : "Verified panel");
+  const banner = demoFallback
+    ? `<div class="card" style="padding:12px 16px;border-color:var(--l);background:var(--h)" role="status"><b>${esc(
+        a.banner || DEMO_LIMIT_BANNER
+      )}</b></div>`
+    : "";
   const panelBody = view.pending
     ? `<div class="card strip"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Takes about a minute")}</p></div>`
     : `<div class="card strip"><div class="sl">${esc(panelTitle)}</div>${
         view.headline ? `<p class="lede">${esc(view.headline)}</p>` : ""
       }<div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>`;
-  const result = a?.done
+  const result = a?.done && !demoFallback
     ? a.error || view.overall === "failed"
       ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
           <div class="alab">${esc(copy.chip || view.chip || "Unable to verify")}</div>
@@ -830,7 +846,8 @@ function viewAnalyze() {
     "analyze",
     crumb("Analysis"),
     null,
-    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. REPORTDATA, RTMR3, MRCONFIGID, and NRAS are one offline line: npm run verify.</p></div></div>
+    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. REPORTDATA, RTMR3, MRCONFIGID, and NRAS are one offline line: scripts/verify_report.py (dcap-qvl).</p></div></div>
+    ${banner}
     <div class="card" style="padding:18px 20px">
       <form id="analyze-form">
         <label class="dl" for="ev">Evidence file</label>
@@ -1875,6 +1892,16 @@ function bind() {
           return;
         }
         if (!res.ok) {
+          if (res.status === 429 && (data?.code === "DEMO_LIMIT" || /DEMO_LIMIT/i.test(String(data?.code || "")))) {
+            state.analyze = demoLimitFallbackAnalyze(sampleFindingReceipt());
+            state.walk.analyzeError = null;
+            state.walk.source = state.walk.source || "sample";
+            persistWalk();
+            await loadStatus();
+            state.analyze = demoLimitFallbackAnalyze(sampleFindingReceipt());
+            render();
+            return;
+          }
           state.analyze = fromAnalyzeHttp({
             ok: false,
             status: res.status,

@@ -52,7 +52,7 @@ export async function sha256Hex(bytes) {
 }
 
 export async function opaqueCaseCommitment(caseId) {
-  const enc = new TextEncoder().encode(`custos-case:${caseId || "larkmoor-demo"}`);
+  const enc = new TextEncoder().encode(`custos-case:${caseId || "larkmoor-sample-v2"}`);
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc));
   return hash;
 }
@@ -90,7 +90,7 @@ export async function prepareStartCase(caseId) {
   return {
     kind: "start_case",
     methodName: "start_case",
-    caseId: caseId || "larkmoor-demo",
+    caseId: caseId || "larkmoor-sample-v2",
     nonce: toHex(nonce),
     nonceArr: toArr(nonce),
     commitment: toHex(commitment),
@@ -103,7 +103,7 @@ export async function prepareAttest({ caseId, receiptId, resultHash }) {
   return {
     kind: "attest_verification",
     methodName: "attest_verification",
-    caseId: caseId || "larkmoor-demo",
+    caseId: caseId || "larkmoor-sample-v2",
     receiptId: Number(receiptId),
     resultHash,
     nonce: toHex(nonce),

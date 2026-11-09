@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Replay FICTIONAL larkmoor-demo against the live testnet contract.
- * No NEAR AI key. No transactions.
+ * Verify the FICTIONAL sample case (default: larkmoor-sample-v2) against the
+ * live testnet contract. No NEAR AI key. No transactions.
+ *
+ * Recomputes finding_hash and citation hashes from samples/seed/ + evidence.
+ * Older development receipts on the same contract are noted, not required.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
@@ -11,8 +14,12 @@ import {
   arrayToHex,
   evidenceCommitment,
   hexToBytes,
+  findingHash,
+  citationHash,
+  citationRecord,
 } from "../src/commit.mjs";
 import { getReceipt, receiptCount, CONTRACT } from "../src/near.mjs";
+import { SAMPLE_CASE_ID } from "../src/session-scope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,14 +39,6 @@ function kindName(k) {
   return String(k);
 }
 
-function isFiller(rec) {
-  if (kindName(rec.kind) !== "Finding") return false;
-  const f = rec.finding || {};
-  const nonce = hex32(f.nonce);
-  const fh = hex32(f.finding_hash);
-  return nonce.replace(/0/g, "") === "" || /^([0-9a-f]{2})\1+$/.test(fh);
-}
-
 async function loadShipped() {
   const dir = join(ROOT, "samples", "findings");
   const map = {};
@@ -53,75 +52,166 @@ async function loadShipped() {
   return map;
 }
 
+async function loadSeedMeta() {
+  try {
+    return JSON.parse(await readFile(join(ROOT, "samples", "seed", "summary.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
+  const sampleCase = process.env.SAMPLE_CASE_ID || SAMPLE_CASE_ID;
   let saltHex = "";
   try {
-    saltHex = (await readFile(join(ROOT, "samples", "larkmoor-salt.hex"), "utf8")).trim();
+    saltHex = (await readFile(join(ROOT, "samples", "seed", "salt.hex"), "utf8")).trim();
   } catch {
-    saltHex = "";
+    try {
+      saltHex = (await readFile(join(ROOT, "samples", "larkmoor-salt.hex"), "utf8")).trim();
+    } catch {
+      saltHex = "";
+    }
   }
   const listing = await readFile(join(ROOT, "samples", "larkmoor-listing.txt"));
   const hold = await readFile(join(ROOT, "samples", "larkmoor-hold.txt"));
   const shipped = await loadShipped();
+  const seed = await loadSeedMeta();
   const n = await receiptCount();
-  const rows = [];
   let failed = 0;
+  let sampleFindings = 0;
+  let otherReceipts = 0;
 
   console.log(`contract ${CONTRACT}  receipts ${n}`);
+  console.log(`sample case ${sampleCase} (default)`);
+  console.log(
+    "Note: older development receipts exist on the same contract; this verify defaults to the sample case."
+  );
   console.log("id\tkind\thash\tsig\tcitation\tnote");
+
+  const salt = saltHex ? hexToBytes(saltHex) : null;
+  const seedIds = new Set(
+    seed?.receipts
+      ? Object.values(seed.receipts).map((r) => Number(r.id))
+      : []
+  );
 
   for (let id = 0; id < n; id++) {
     const rec = await getReceipt(id);
     const kind = kindName(rec.kind);
+    const caseId = String(rec.case_id || "");
+    const onSample = caseId === sampleCase || seedIds.has(id);
+    if (!onSample) {
+      otherReceipts++;
+      continue;
+    }
+
     const f = rec.finding || {};
-    const filler = isFiller(rec);
     let hashOk = "n/a";
     let sigOk = "n/a";
     let citOk = "n/a";
-    let note = filler ? "FILLER" : "";
+    let note = caseId;
 
     if (kind === "Finding" && f.model_id) {
+      sampleFindings++;
       const text = signedText(f.model_id, f.request_hash, f.response_hash);
       const sig = Buffer.from(f.signature);
       const pk = Buffer.from(f.signer_pubkey);
       sigOk = nacl.sign.detached.verify(Buffer.from(text, "utf8"), sig, pk) ? "ok" : "FAIL";
-      if (sigOk === "FAIL" && !filler) failed++;
+      if (sigOk === "FAIL") failed++;
 
       const local = shipped[id];
-      if (saltHex) {
-        const salt = hexToBytes(saltHex);
-        const files = [hold, listing];
-        const commitOk = files.some(
-          (file) => hex32(rec.evidence_commitments?.[0]) === evidenceCommitment(salt, file).toString("hex")
-        );
-        hashOk = commitOk ? "ok" : "n/a";
-        if (local) {
-          const quotesOk = (local.citations || []).every((c) =>
-            files.some((file) => file.toString("utf8").includes(c.quote || ""))
-          );
-          citOk = quotesOk ? "ok" : "FAIL";
-          if (citOk === "FAIL") failed++;
+      const label =
+        id === seed?.receipts?.accept?.id
+          ? "accept"
+          : id === seed?.receipts?.flag?.id
+            ? "flag"
+            : id === seed?.receipts?.hold?.id
+              ? "hold"
+              : null;
+      const evidenceFile = label === "hold" ? hold : listing;
+
+      if (salt) {
+        const commitHex = evidenceCommitment(salt, evidenceFile).toString("hex");
+        const commitOk = hex32(rec.evidence_commitments?.[0]) === commitHex;
+        hashOk = commitOk ? "ok" : "FAIL";
+        if (!commitOk) failed++;
+
+        let citRecords = [];
+        let findingBody = null;
+        if (label) {
+          try {
+            const seeded = JSON.parse(
+              await readFile(join(ROOT, "samples", "seed", label, "receipt.json"), "utf8")
+            );
+            findingBody = seeded.finding || null;
+            if (Array.isArray(seeded.citation_records) && seeded.citation_records.length) {
+              citRecords = seeded.citation_records;
+            } else if (Array.isArray(seeded.citations)) {
+              citRecords = seeded.citations;
+            }
+          } catch {
+            /* optional */
+          }
         }
-        if (commitOk) note = (note + " salt-commit").trim();
-      } else if (!filler && kind === "Finding") {
-        note = (note + " no sample salt").trim();
+        if (!citRecords.length && local?.citations?.length) citRecords = local.citations;
+
+        const expectedCit = (f.citation_hashes || []).map(hex32);
+        let hashesOk = true;
+        if (citRecords.length) {
+          const recomputed = citRecords.map((c) => {
+            // Seeded citation_records are already canonical; hash them directly.
+            if (c.quote_sha256 && c.evidence_commitment) {
+              return citationHash(salt, c).toString("hex");
+            }
+            const recCit = citationRecord(commitHex, {
+              evidence_id: c.evidence_id || "E1",
+              line_start: c.line_start,
+              line_end: c.line_end,
+              byte_start: c.byte_start,
+              byte_end: c.byte_end,
+              quote: c.quote,
+            });
+            return citationHash(salt, recCit).toString("hex");
+          });
+          hashesOk =
+            expectedCit.length === recomputed.length &&
+            expectedCit.every((h, i) => h === recomputed[i]);
+        } else if (expectedCit.length) {
+          hashesOk = false;
+        }
+
+        const quotesOk =
+          !citRecords.length ||
+          citRecords.every(
+            (c) => !c.quote || evidenceFile.toString("utf8").includes(c.quote)
+          );
+
+        let findingHashOk = true;
+        if (findingBody) {
+          const recomputedFh = findingHash(salt, findingBody).toString("hex");
+          findingHashOk = hex32(f.finding_hash) === recomputedFh;
+        }
+
+        citOk = quotesOk && hashesOk && findingHashOk ? "ok" : "FAIL";
+        if (citOk === "FAIL") failed++;
+        note = `${note} recompute`;
+        if (commitOk) note = `${note} salt-commit`;
+      } else {
+        note = `${note} no sample salt`;
       }
     }
 
-    if (filler) {
-      hashOk = "skip";
-      citOk = "skip";
-    }
-
-    rows.push({ id, kind, hashOk, sigOk, citOk, note });
     console.log(`${id}\t${kind}\t${hashOk}\t${sigOk}\t${citOk}\t${note}`);
   }
 
+  console.log(
+    `\nSample findings checked: ${sampleFindings}. Other receipts on contract (skipped): ${otherReceipts}.`
+  );
   if (failed) {
-    console.error(`verify failed (${failed} checks)`);
+    console.error(`FAILED ${failed} check(s)`);
     process.exit(1);
   }
-  console.log("verify ok");
+  console.log("OK");
 }
 
 main().catch((e) => {

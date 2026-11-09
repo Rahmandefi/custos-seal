@@ -1,4 +1,4 @@
-export const SAMPLE_CASE_ID = "larkmoor-demo";
+export const SAMPLE_CASE_ID = "larkmoor-sample-v2";
 export const CASE_IDS_HEADER = "x-custos-case-ids";
 
 const HEX32 = /^[0-9a-f]{32}$/i;

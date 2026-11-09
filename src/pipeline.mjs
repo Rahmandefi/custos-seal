@@ -375,7 +375,7 @@ async function loadSeen(path) {
 export async function analyzeEvidence({
   evidenceBytes,
   evidenceText,
-  caseId = "larkmoor-demo",
+  caseId = "larkmoor-sample-v2",
   outDir,
   root,
   apiKey = process.env.NEAR_AI_API_KEY,

@@ -1,0 +1,36 @@
+{
+  "fictional": true,
+  "case_id": "larkmoor-sample-v2",
+  "salt": "375c080e9cbcf3bd9229dfb8a2fc09da16e29a81a5d61eb28c5c5cd105260e0e",
+  "receipts": {
+    "accept": {
+      "id": 17,
+      "tx": "FrZLuPxGDkxSutxjhGdBTXVtc9rKAkRXaSiV4edbhGWJ"
+    },
+    "flag": {
+      "id": 18,
+      "tx": "FJ8nnENFV4AmLghHgazQ4QDHL2XEGPJshNPEHMcFqvvf"
+    },
+    "hold": {
+      "id": 19,
+      "tx": "7HYE3Sz5naPHqg7c6x146u3kxFTN2rsKgjfTiDvABhLf"
+    },
+    "open_denied": {
+      "id": 20,
+      "tx": "HvF67rbfKbfkcAJ1TfPHB4bBAzagGK72iPSVJ1n34L8K"
+    },
+    "open": {
+      "id": 21,
+      "tx": "7uAQ84cA4P54DwBhCCrZQbwrJ8RH1LzTvWDveXz1QyEq"
+    },
+    "rejection": {
+      "id": 22,
+      "tx": "5SxbUMcLXYK75izuhHphNo1t92hLaGecDGVeHKudDAjj"
+    },
+    "custody_check": {
+      "id": 23,
+      "tx": "AfQvz1CLbqzQptCvXkLQaty4SciC2Srod6pjgzeXQ5K6"
+    }
+  },
+  "receipt_count_after": 24
+}

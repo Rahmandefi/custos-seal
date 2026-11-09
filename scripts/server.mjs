@@ -398,7 +398,7 @@ export async function handleRequest(req, res) {
       const sent = await callOwner(
         "approve_action",
         {
-          case_id: j.case_id || "larkmoor-demo",
+          case_id: j.case_id || SAMPLE_CASE_ID,
           receipt_id: Number(j.receipt_id),
           decision,
           reason,
@@ -603,7 +603,7 @@ export async function handleRequest(req, res) {
     if (req.method === "GET" && req.url?.startsWith("/api/grantee")) {
       const u = new URL(req.url, "http://127.0.0.1");
       const ok = await viewFunction("is_grantee", {
-        case_id: u.searchParams.get("case_id") || "larkmoor-demo",
+        case_id: u.searchParams.get("case_id") || SAMPLE_CASE_ID,
         account: u.searchParams.get("account"),
       });
       json(res, 200, { granted: Boolean(ok) });
