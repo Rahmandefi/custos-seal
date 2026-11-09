@@ -13,9 +13,15 @@ export const LIVE_CHECKS = [
   { id: "write", label: "On-chain write" },
 ];
 
+/** Rows that must pass for "Required checks passed". Nonce binding is not included. */
+export const REQUIRED_CHECKS = LIVE_CHECKS.map((r) => r.id);
+
+export const FRESHNESS_DETAIL =
+  "Freshness: SDK attestation cache disabled (TTL 0)";
+
 export const E2EE_CONFIGURED = true;
 export const E2EE_DETAIL =
-  "configured e2ee=true; X-Model-Pub-Key vs signing key is not independently checked in this request";
+  "configured e2ee=true; X-Model-Pub-Key vs signing key was not available for comparison in this request";
 
 export const OFFLINE_CHECK = {
   id: "offline",
@@ -109,10 +115,11 @@ export function emptyChecks() {
 }
 
 export function setCheck(checks, id, status, { reason = null, evidence = null, detail = null } = {}) {
-  if (id === "nonce_binding") {
-    if (status !== "fail") return checks;
-    id = "nonce";
-  }
+  // Nonce binding is not a required app check: InferenceClient.verify() does not
+  // return clientBinding.nonce, so the app cannot compare a caller-generated
+  // nonce to report.request_nonce / REPORTDATA. Binding stays inside the SDK;
+  // freshness is attested by attestationCacheTimeToLiveMs: 0.
+  if (id === "nonce_binding") return checks;
   if (id === "independent_dcap") return checks;
   id = mapCheckId(id);
   const prev = checks[id] || {};
@@ -151,11 +158,12 @@ export function toWireChecks(checks) {
       detail: c.detail || c.reason || formatEvidence(c.evidence) || null,
     };
   });
+  const e2 = m.e2ee || {};
   live.push({
     id: "e2ee",
     label: "Prompt encryption check",
-    status: "not_run",
-    detail: cE2eeDetail(m.e2ee) || E2EE_DETAIL,
+    status: e2.status || "not_run",
+    detail: cE2eeDetail(e2) || E2EE_DETAIL,
   });
   live.push({
     id: OFFLINE_CHECK.id,
@@ -169,6 +177,29 @@ export function toWireChecks(checks) {
 
 function cE2eeDetail(row) {
   return row?.detail || row?.reason || null;
+}
+
+/** Compare quote-bound model pub key to the verified signing address (ed25519 / ECDSA). */
+export function e2eePubKeyMatchesSigner(model) {
+  const pub = model?.signingPublicKey;
+  const addr =
+    model?.signer?.signingAddress ??
+    model?.signer?.signing_address ??
+    (typeof model?.signer === "string" ? model.signer : null);
+  if (!pub || !addr) return null;
+  const p = fieldHex(pub);
+  const a = fieldHex(addr);
+  if (!p || !a) return null;
+  if (p === a) return true;
+  if (p.length === 130 && p.startsWith("04") && p.slice(2) === a) return true;
+  return false;
+}
+
+export function e2eeCheckDetail({ configured = E2EE_CONFIGURED, matched = null } = {}) {
+  const cfg = `configured e2ee=${configured ? "true" : "false"}`;
+  if (matched === true) return `${cfg}; X-Model-Pub-Key matched the verified signing key`;
+  if (matched === false) return `${cfg}; X-Model-Pub-Key did not match the verified signing key`;
+  return `${cfg}; X-Model-Pub-Key vs signing key was not available for comparison in this request`;
 }
 
 export function failRowForError(code, checks) {
@@ -229,6 +260,23 @@ export function canRecord(checks) {
     if (m[id]?.status !== "pass") return false;
   }
   return true;
+}
+
+export function requiredRows(checks) {
+  const m = checksMap(checks);
+  return REQUIRED_CHECKS.map((id) => m[id] || { id, status: "not_run" });
+}
+
+/** true when every required row has status pass. */
+export function requiredChecksPassed(checks) {
+  return requiredRows(checks).every((c) => c?.status === "pass");
+}
+
+/** true when a required row failed or still cannot run after analysis. */
+export function requiredChecksWarned(checks) {
+  return requiredRows(checks).some(
+    (c) => c?.status === "fail" || c?.status === "not_run" || c?.status === "unsupported"
+  );
 }
 
 export function shortHex(hex) {
@@ -421,15 +469,52 @@ export function errorCopy(analyze) {
   };
 }
 
+/**
+ * Header chip + tone.
+ * - idle: "No analysis yet" (neutral)
+ * - all required pass: "Required checks passed" (ok)
+ * - warn/bad only when a required check fails or can't run
+ */
+export function headerChip(analyze) {
+  if (!analyze || (!analyze.done && !analyze.running && !analyze.recordedRun && !analyze.error && !analyze.checks)) {
+    return { chip: "No analysis yet", tone: "idle", overall: "idle" };
+  }
+  if (analyze?.running && !analyze?.done) {
+    return { chip: "Analyzing", tone: "idle", overall: "pending" };
+  }
+  if (analyze?.recordedRun) {
+    return { chip: "Recorded run", tone: "idle", overall: "recorded" };
+  }
+  const checks = analyze?.checks;
+  if (!checks) {
+    if (analyze?.error) return { chip: "Unable to verify", tone: "bad", overall: "failed" };
+    return { chip: "No analysis yet", tone: "idle", overall: "unavailable" };
+  }
+  const overall = overallVerification(checks, analyze);
+  if (requiredChecksPassed(checks)) {
+    return { chip: "Required checks passed", tone: "ok", overall };
+  }
+  if (requiredChecksWarned(checks) || overall === "failed" || analyze?.error) {
+    const tone = overall === "failed" || requiredRows(checks).some((c) => c?.status === "fail") ? "bad" : "warn";
+    return {
+      chip: overall === "failed" ? "Unable to verify" : "Verification incomplete",
+      tone,
+      overall,
+    };
+  }
+  return { chip: "No analysis yet", tone: "idle", overall };
+}
+
 /** UI mapping. Ignores timer ticks. Missing checks stay unverified. */
 export function panelView(analyze) {
   if (analyze?.running && !analyze?.done) {
     return {
       title: "Verified panel",
       chip: "Analyzing",
+      tone: "idle",
       pending: true,
       overall: "pending",
-      headline: "Waiting for analysis",
+      headline: "Takes about a minute",
       body: null,
       rows: [],
     };
@@ -439,6 +524,7 @@ export function panelView(analyze) {
     return {
       title: "Recorded run",
       chip: "Recorded run",
+      tone: "idle",
       overall: "recorded",
       headline: null,
       body: null,
@@ -457,10 +543,12 @@ export function panelView(analyze) {
   const copy = errorCopy(analyze);
   if (!checks) {
     const failed = Boolean(analyze?.error);
+    const head = headerChip(analyze);
     return {
       title: "Verified panel",
-      chip: failed ? "Unable to verify" : "Verification unavailable",
-      overall: failed ? "failed" : "unavailable",
+      chip: head.chip,
+      tone: head.tone,
+      overall: failed ? "failed" : head.overall,
       pending: false,
       headline: copy?.headline || null,
       body: copy?.body || null,
@@ -469,21 +557,15 @@ export function panelView(analyze) {
   }
   const overall = overallVerification(checks, analyze);
   const wire = toWireChecks(checks);
-  const chip =
-    overall === "verified"
-      ? "Verified"
-      : overall === "failed"
-        ? "Unable to verify"
-        : overall === "incomplete"
-          ? "Verification incomplete"
-          : "Verification unavailable";
+  const head = headerChip(analyze);
   const header =
     overall === "failed" && checksMap(checks).write?.status !== "pass"
       ? "No receipt was written"
       : copy?.headline || null;
   return {
     title: "Verified panel",
-    chip,
+    chip: head.chip,
+    tone: head.tone,
     overall,
     pending: false,
     headline: header,

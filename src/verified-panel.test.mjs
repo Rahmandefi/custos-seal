@@ -48,6 +48,9 @@ function goodFinding() {
 function teeStub(overrides = {}) {
   const finding = overrides.finding ?? goodFinding();
   const nonce = overrides.nonce === undefined ? "bb".repeat(32) : overrides.nonce;
+  const signerAddr = overrides.signerAddr ?? "44".repeat(32);
+  const signingPublicKey =
+    overrides.signingPublicKey === undefined ? signerAddr : overrides.signingPublicKey;
   return async () => ({
     ...(Object.prototype.hasOwnProperty.call(overrides, "requestNonce")
       ? { requestNonce: overrides.requestNonce }
@@ -62,6 +65,8 @@ function teeStub(overrides = {}) {
         {
           tcbStatus: overrides.modelTcb === undefined ? "UpToDate" : overrides.modelTcb,
           report: { nonce },
+          signer: { signingAlgo: "ed25519", signingAddress: signerAddr },
+          ...(signingPublicKey != null ? { signingPublicKey } : {}),
         },
       ],
     },
@@ -165,9 +170,14 @@ test("Verified panel truthfulness regression: valid evidence only executed check
       view.rows.every(
         (r) =>
           r.status !== "pass" ||
-          ["gateway_tcb", "model_tcb", "nonce", "signature", "citations"].includes(r.id)
+          ["gateway_tcb", "model_tcb", "nonce", "signature", "citations", "e2ee"].includes(r.id)
       )
     );
+    const e2ee = view.rows.find((r) => r.id === "e2ee");
+    assert.equal(e2ee.status, "pass");
+    assert.match(e2ee.detail, /configured e2ee=true/);
+    assert.match(e2ee.detail, /X-Model-Pub-Key matched the verified signing key/);
+    assert.match(String(c.nonce.detail || c.nonce.reason), /Freshness: SDK attestation cache disabled \(TTL 0\)/);
   });
 });
 
@@ -221,47 +231,19 @@ test("Verified panel truthfulness regression: malformed nonce fails, recording n
   });
 });
 
-test("Verified panel truthfulness regression: valid nonce that differs from request nonce fails binding", async () => {
+test("Verified panel: nonce binding demoted; freshness TTL 0 shown; requestNonce ignored", async () => {
   await withTmp(async (outDir) => {
-    let recorded = 0;
-    const err = await analyzeEvidence({
-      evidenceText,
-      outDir,
-      writeOnChain: true,
-      runDcap: false,
-      tee: teeStub({ nonce: "cc".repeat(32), requestNonce: "aa".repeat(32) }),
-      allowanceFn: local.allowanceFn,
-      recordFindingFn: async () => {
-        recorded += 1;
-        return { tx: "fake" };
-      },
-      txStatusFn: async () => ({ status: { SuccessValue: "" }, finality: "final" }),
-      getReceiptFn: async () => null,
-      receiptCountFn: async () => 0,
-      viewAccountFn: async () => ({ storage_usage: 0 }),
-    }).then(
-      () => null,
-      (e) => e
-    );
-    assert.equal(err.code, "NONCE_BINDING");
-    assert.equal(err.checks.nonce.status, "fail");
-    assert.equal(err.checks.signature.status, "not_run");
-    assert.equal(err.checks.citations.status, "not_run");
-    assert.equal(err.checks.write.status, "not_run");
-    assert.equal(recorded, 0);
-  });
-});
-
-test("Verified panel truthfulness regression: binding unavailable when SDK omits request nonce", async () => {
-  await withTmp(async (outDir) => {
+    // InferenceClient.verify() does not return clientBinding.nonce, so the app
+    // cannot compare a caller nonce to report.request_nonce / REPORTDATA.
     const result = await analyzeEvidence({
       evidenceText,
       outDir,
       ...local,
-      tee: teeStub({ requestNonce: null }),
+      tee: teeStub({ nonce: "cc".repeat(32), requestNonce: "aa".repeat(32) }),
     });
     assert.equal(result.checks.nonce.status, "pass");
-    assert.equal(result.checks.write.status, "not_run");
+    assert.match(String(result.checks.nonce.detail || result.checks.nonce.reason), /Freshness: SDK attestation cache disabled \(TTL 0\)/);
+    assert.equal(result.checks.nonce.evidence?.freshness_ttl_ms, 0);
   });
 });
 
@@ -461,10 +443,13 @@ test("Verified panel truthfulness regression: missing and offline-only evidence 
   assert.equal(checks.offline.status, "not_in_request");
   const view = panelView({ done: true, checks });
   assert.equal(view.overall, "unavailable");
+  assert.equal(view.chip, "Verification incomplete");
+  assert.equal(view.tone, "warn");
   assert.ok(view.rows.every((r) => r.status === "not_run" || r.status === "not_in_request"));
   assert.equal(view.rows.filter((r) => r.id === "offline").length, 1);
   const none = panelView(null);
-  assert.equal(none.chip, "Verification unavailable");
+  assert.equal(none.chip, "No analysis yet");
+  assert.equal(none.tone, "idle");
   assert.equal(none.rows.length, 0);
 });
 
@@ -489,6 +474,7 @@ test("Verified panel truthfulness regression: new run and failed run cannot disp
   assert.ok(failedView.rows.find((r) => r.id === "write").status !== "pass");
   const next = panelView(freshAnalyzeState());
   assert.equal(next.pending, true);
+  assert.equal(next.headline, "Takes about a minute");
   assert.equal(next.rows.length, 0);
 });
 
@@ -497,6 +483,7 @@ test("Verified panel truthfulness regression: no timer advances verification sta
   assert.equal(view.pending, true);
   assert.equal(view.rows.length, 0);
   assert.equal(view.chip, "Analyzing");
+  assert.equal(view.headline, "Takes about a minute");
   const withEmpty = panelView({ running: true, tick: 99, checks: emptyChecks() });
   assert.equal(withEmpty.pending, true);
   assert.equal(withEmpty.rows.length, 0);
@@ -514,7 +501,8 @@ test("Verified panel truthfulness regression: confirmed recording is required fo
     assert.equal(result.checks.write.evidence.receipt_id, 7);
     assert.equal(overallVerification(result.checks), "verified");
     const view = panelView({ done: true, checks: result.checks });
-    assert.equal(view.chip, "Verified");
+    assert.equal(view.chip, "Required checks passed");
+    assert.equal(view.tone, "ok");
   });
 });
 
@@ -784,7 +772,8 @@ test("Verified panel truthfulness regression: null analysis with saved error doe
   const text = copy.headline || copy.body || a?.error || walkError;
   assert.equal(text, "saved walk error");
   const view = panelView(a);
-  assert.equal(view.chip, "Verification unavailable");
+  assert.equal(view.chip, "No analysis yet");
+  assert.equal(view.tone, "idle");
 });
 
 test("Verified panel truthfulness regression: HTTP error without skip_chain does not infer contract skipped", () => {

@@ -40,6 +40,9 @@ function teeStub(overrides = {}) {
   const nonce = overrides.nonce === undefined ? "bb".repeat(32) : overrides.nonce;
   const verifiedSigner = overrides.verifiedSigner;
   const fetchedSigner = overrides.fetchedSigner ?? "44".repeat(32);
+  const signerAddr = overrides.signerAddr ?? fetchedSigner;
+  const signingPublicKey =
+    overrides.signingPublicKey === undefined ? signerAddr : overrides.signingPublicKey;
   return async () => ({
     attested: {
       tcbOk: overrides.tcbOk ?? true,
@@ -51,6 +54,8 @@ function teeStub(overrides = {}) {
         {
           tcbStatus: overrides.modelTcb === undefined ? "UpToDate" : overrides.modelTcb,
           report: { nonce },
+          signer: { signingAlgo: "ed25519", signingAddress: signerAddr },
+          ...(signingPublicKey != null ? { signingPublicKey } : {}),
         },
       ],
     },
@@ -130,7 +135,10 @@ function assertCascade(view, failId, reasonRe) {
   const e2ee = view.rows.find((r) => r.id === "e2ee");
   assert.equal(e2ee.label, "Prompt encryption check");
   assert.match(e2ee.detail, /configured e2ee=true/);
-  assert.match(e2ee.detail, /not independently checked/);
+  assert.match(
+    e2ee.detail,
+    /X-Model-Pub-Key (matched the verified signing key|did not match the verified signing key|vs signing key was not available for comparison)/
+  );
 }
 
 async function failAnalyze(outDir, opts) {
@@ -246,6 +254,42 @@ test("UI: in-flight analyze is a single pending state with no rows", () => {
   assert.equal(view.pending, true);
   assert.equal(view.rows.length, 0);
   assert.equal(view.chip, "Analyzing");
+  assert.equal(view.headline, "Takes about a minute");
+  assert.equal(view.tone, "idle");
+});
+
+test("UI: header chip idle / required passed / warn only on required fail", () => {
+  const idle = panelView(null);
+  assert.equal(idle.chip, "No analysis yet");
+  assert.equal(idle.tone, "idle");
+
+  const passed = panelView({
+    done: true,
+    checks: Object.fromEntries(
+      LIVE_CHECKS.map((r) => [r.id, { id: r.id, status: "pass", detail: "ok" }])
+    ),
+  });
+  assert.equal(passed.chip, "Required checks passed");
+  assert.equal(passed.tone, "ok");
+
+  const warned = panelView({
+    done: true,
+    checks: {
+      ...Object.fromEntries(LIVE_CHECKS.map((r) => [r.id, { id: r.id, status: "pass" }])),
+      citations: { id: "citations", status: "not_run", detail: "skipped" },
+    },
+  });
+  assert.equal(warned.chip, "Verification incomplete");
+  assert.equal(warned.tone, "warn");
+
+  const failed = panelView({
+    done: true,
+    checks: {
+      ...Object.fromEntries(LIVE_CHECKS.map((r) => [r.id, { id: r.id, status: "pass" }])),
+      nonce: { id: "nonce", status: "fail", detail: "bad" },
+    },
+  });
+  assert.equal(failed.tone, "bad");
 });
 
 test("UI: unknown failure reports whether a new receipt appeared for this case", () => {

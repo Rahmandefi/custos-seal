@@ -42,6 +42,10 @@ import {
   txExecutionState,
   receiptMatchesIntended,
   fieldHex,
+  FRESHNESS_DETAIL,
+  e2eePubKeyMatchesSigner,
+  e2eeCheckDetail,
+  E2EE_CONFIGURED,
 } from "../web/verify-checks.js";
 
 export class PipelineError extends Error {
@@ -460,19 +464,15 @@ export async function analyzeEvidence({
     });
     throw new PipelineError("NONCE_REUSED", `nonce ${nonceHex} already used`, checks);
   }
+  // Request-nonce binding is not required here: InferenceClient.verify() does not
+  // expose clientBinding.nonce on AttestationResult, so this app cannot generate a
+  // 32-byte nonce and compare it to report.request_nonce / REPORTDATA. The SDK
+  // still binds internally; we disable the attestation cache (TTL 0) for freshness.
   setCheck(checks, "nonce", "pass", {
-    evidence: { nonce: shortHex(nonceHex), kind: "format" },
+    reason: FRESHNESS_DETAIL,
+    detail: `${FRESHNESS_DETAIL}; nonce ${shortHex(nonceHex)}`,
+    evidence: { nonce: shortHex(nonceHex), kind: "format", freshness_ttl_ms: 0 },
   });
-
-  mark("nonce_binding");
-  const requestNonce = attestationNonceHex(teeResult.requestNonce);
-  if (requestNonce && requestNonce !== nonceHex) {
-    setCheck(checks, "nonce", "fail", {
-      reason: "reported nonce does not match the request nonce",
-      evidence: { request: shortHex(requestNonce), reported: shortHex(nonceHex) },
-    });
-    throw new PipelineError("NONCE_BINDING", "request nonce mismatch", checks);
-  }
   const nonceBytes = nonceToBytes(nonceHex);
 
   mark("signature");
@@ -511,10 +511,20 @@ export async function analyzeEvidence({
   });
 
   mark("e2ee");
-  setCheck(checks, "e2ee", "not_run", {
-    detail:
-      "configured e2ee=true; X-Model-Pub-Key vs signing key is not independently checked in this request",
-  });
+  {
+    const model = attested.models?.[0];
+    const matched = e2eePubKeyMatchesSigner(model);
+    const detail = e2eeCheckDetail({ configured: E2EE_CONFIGURED, matched });
+    setCheck(checks, "e2ee", matched === false ? "fail" : matched === true ? "pass" : "not_run", {
+      detail,
+      reason: detail,
+      evidence: {
+        e2ee: E2EE_CONFIGURED,
+        matched,
+        signing_public_key: model?.signingPublicKey ? shortHex(fieldHex(model.signingPublicKey)) : null,
+      },
+    });
+  }
 
   mark("citations");
   const parsed = parseModelJson(completionText(completion));

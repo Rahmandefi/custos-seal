@@ -435,9 +435,9 @@ function tree(active) {
 
 function lastAnalysisChip() {
   const view = panelView(state.analyze);
-  const cls =
-    view.overall === "verified" ? "ok" : view.overall === "failed" ? "bad" : "net";
-  const icon = view.overall === "verified" ? "shieldok" : view.overall === "failed" ? "shieldx" : "info";
+  const tone = view.tone || (view.overall === "verified" ? "ok" : view.overall === "failed" ? "bad" : "idle");
+  const cls = tone === "ok" ? "ok" : tone === "bad" ? "bad" : tone === "warn" ? "warn" : "idle";
+  const icon = tone === "ok" ? "shieldok" : tone === "bad" ? "shieldx" : "info";
   return `<span class="chip ${cls}">${svg(icon, 13)}${esc(view.chip)}</span>`;
 }
 
@@ -801,7 +801,7 @@ function viewAnalyze() {
   const copy = errorCopy(a) || {};
   const panelTitle = view.title || (sampleMode ? "Recorded run" : "Verified panel");
   const panelBody = view.pending
-    ? `<div class="card strip"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Analyzing…")}</p></div>`
+    ? `<div class="card strip"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Takes about a minute")}</p></div>`
     : `<div class="card strip"><div class="sl">${esc(panelTitle)}</div>${
         view.headline ? `<p class="lede">${esc(view.headline)}</p>` : ""
       }<div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>`;
@@ -815,7 +815,7 @@ function viewAnalyze() {
         </div>`
       : overallOk
       ? `<div class="card" style="padding:16px 20px;border-color:var(--m);background:var(--p)">
-          <div class="alab" style="color:var(--bh)">Verified</div>
+          <div class="alab" style="color:var(--bh)">${esc(view.chip || "Required checks passed")}</div>
           <h2>Receipt ${esc(String(a.receipt_id))} recorded</h2>
           <p class="lede">Policy ${esc(String(a.policy || "-"))}. Storage +${esc(String(a.storage_delta ?? "-"))} bytes.</p>
           <p><a class="lnk" href="#/receipt/${a.receipt_id}">Open receipt</a>
@@ -836,7 +836,7 @@ function viewAnalyze() {
         <label class="dl" for="ev">Evidence file</label>
         <input id="ev" name="file" type="file" required />
         <p class="lede">Use samples/larkmoor-listing.txt for the demo.</p>
-        <button class="btn primary" type="submit" ${a?.running ? "disabled" : ""}>${svg("list", 17)}${a?.running ? "Analyzing…" : "Analyze"}</button>
+        <button class="btn primary" type="submit" ${a?.running ? "disabled" : ""}>${svg("list", 17)}${a?.running ? "Analyzing… Takes about a minute" : "Analyze"}</button>
         ${
           a?.error || state.walk.analyzeError
             ? `<div class="ar done" style="background:var(--d);border-color:var(--g)"><span class="alab">${esc(
