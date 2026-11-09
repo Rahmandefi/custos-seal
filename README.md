@@ -39,7 +39,7 @@ which approved key* so later disputes have a single, public sequence.
 
 Incident-response firms, cyber insurers, and compliance auditors who already
 review AI-assisted triage and need a receipt they can re-verify. It is **not**
-a police evidence locker and not a court-certified forensic suite.
+a court-certified forensic suite.
 
 ## Limits (read before the pitch)
 
@@ -89,7 +89,7 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 ## What this repo does
 
-1. **Enclave-sealed analysis:** Confidential TEE only (`z-ai/glm-5.3-flash`). Fresh nonce every request. Ed25519 + E2EE. TCB `UpToDate` only.
+1. **Enclave-sealed analysis:** Confidential TEE only (`z-ai/glm-5.3-flash`). Attestation cache TTL 0 for freshness. Nonce binding is checked by the offline script (`npm run verify`), not live. Ed25519 + configured E2EE. TCB `UpToDate` only. The contract checks the enclave signature on-chain, not the attestation.
 2. **Deterministic policy:** citations must match evidence byte-for-byte (R1). Schema, provenance, irreversible-action HOLD, injection markers, confidence floor.
 3. **On-chain receipts:** full signed receipt stored at creation; contract rebuilds signed text and runs `env::ed25519_verify` (R3).
 4. **Human in the loop:** isolate/block/delete/notify wait for an investigator-signed `approve_action`.
@@ -97,8 +97,10 @@ Hosted forensic AI is a black box: you cannot prove where analysis ran, which mo
 
 Honest limits (NEAR docs): a `provider_tee` signature does not prove *which* GPU instance served the request; gateway + model evidence are not a complete cryptographic chain per response. We use non-streaming Chat Completions with a canonical model ID and `x-no-aliasing`. TDX quotes are verified off-chain; only hashes go on-chain.
 
-Evidence stays in the browser for the visitor's session. The hosted app does not keep evidence files or ciphertext after a request. Receipts on chain are hashes, signed findings, and policy verdicts. `clearResponseCache()` runs after verification.
-Scoping is view isolation; the chain is public.
+Evidence stays in this browser's sessionStorage; the server stores nothing.
+Receipts on chain are hashes, signed findings, and policy verdicts.
+`clearResponseCache()` runs after verification. Scoping is view isolation; the
+chain is public.
 
 ## Setup from scratch
 
@@ -206,7 +208,7 @@ cd contracts/custody && cargo test --lib
 
 See: 6 tests pass: valid Ed25519 stores a Finding; flipped signature panics; replay panics; `request_open` from a stranger writes OpenDenied and returns false (no panic); grant/open/custody checks.
 
-### 6. End-to-end POST (testnet)
+### 6. Full analyze POST (testnet)
 
 ```bash
 set -a && source .env && set +a

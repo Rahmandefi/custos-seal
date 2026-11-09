@@ -429,7 +429,7 @@ function tree(active) {
         return html || `<div class="tg">No matches for '${esc(state.filterQ)}'</div>`;
       })()}
     </div>
-    <div class="sfoot">${svg("lock", 13)}Evidence and salt stay in this tab; the server stores nothing</div>
+    <div class="sfoot">${svg("lock", 13)}Evidence stays in this browser's sessionStorage; the server stores nothing</div>
   </aside>`;
 }
 
@@ -754,7 +754,7 @@ function viewWorkspace() {
       <aside class="card det">
         <div class="dh"><div class="eyebrow">Selected case</div><h2>${w.caseName || "Larkmoor Records Office"}</h2>
           <div class="dm">${w.caseDesc || "File-transfer breach"}</div></div>
-        <div class="dsec"><div class="dl">Encrypted at rest</div><p class="lede">Plaintext exists only in memory during analysis. The custody log stores fingerprints, not the file.</p></div>
+        <div class="dsec"><div class="dl">Evidence in this browser</div><p class="lede">Evidence stays in this browser's sessionStorage; the server stores nothing. The custody log stores fingerprints, not the file. The contract checks the enclave signature on-chain, not the attestation.</p></div>
       </aside>
     </div>`
   );
