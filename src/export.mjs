@@ -144,7 +144,7 @@ export async function buildExport(outDir) {
       pending_hold_count: pending_holds.length,
       approval_count: approvals.filter((a) => a.kind === "Approval").length,
       rejection_count: approvals.filter((a) => a.kind === "Rejection").length,
-      case_id: "larkmoor-demo",
+      case_id: "larkmoor-sample-v2",
       sample: "FICTIONAL",
     },
     timeline: receipts.map((r) => ({

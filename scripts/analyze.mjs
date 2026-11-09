@@ -12,7 +12,7 @@ const file = process.argv[2] || join(ROOT, "samples/larkmoor-listing.txt");
 const evidenceBytes = await readFile(file);
 const result = await analyzeEvidence({
   evidenceBytes,
-  caseId: "larkmoor-demo",
+  caseId: "larkmoor-sample-v2",
   outDir: join(ROOT, "out"),
   root: ROOT,
   apiKey: process.env.NEAR_AI_API_KEY,
