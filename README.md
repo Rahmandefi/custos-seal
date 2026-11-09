@@ -17,9 +17,10 @@ npm run verify
 This verifies the FICTIONAL `larkmoor-sample-v2` sample against the live testnet
 contract `ftcust15e434.testnet` (or the contract id in `samples/contract.json`).
 It recomputes evidence commitments, finding_hash, and citation hashes from
-`samples/seed/`, and checks ed25519 finding signatures. It does **not** call
-NEAR AI Cloud and does **not** send transactions. Older development receipts on
-the same contract are noted and skipped.
+`samples/seed/` for the sample Findings, and checks ed25519 signatures on every
+Finding on the contract. It does **not** call NEAR AI Cloud and does **not**
+send transactions. The sample salt and `samples/seed/` are public by design
+(fictional data only).
 
 REPORTDATA / quote checks remain offline via `scripts/verify_report.py` (dcap-qvl),
 not this command.

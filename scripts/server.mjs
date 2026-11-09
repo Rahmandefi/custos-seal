@@ -351,6 +351,24 @@ export async function handleRequest(req, res) {
     if (req.method === "POST" && pathOnly === "/analyze") {
       analyzeCtx = { attempt: randomUUID(), started: Date.now(), stage: "authorize" };
     }
+    // SAMPLE_READONLY before write auth so analyze/custody/approve against the
+    // sample case return 403 (not a generic 401) even without an operator token.
+    const custodyWrite =
+      pathOnly === "/custody/hold" ||
+      pathOnly === "/custody/check" ||
+      pathOnly === "/custody/open" ||
+      pathOnly === "/custody/grant";
+    if (req.method === "POST" && custodyWrite) {
+      const raw = await readBody(req);
+      req._cachedBody = raw;
+      let caseId = SAMPLE_CASE_ID;
+      try {
+        caseId = JSON.parse(raw.toString("utf8")).case_id || SAMPLE_CASE_ID;
+      } catch {
+        /* keep default */
+      }
+      if (rejectSampleWrite(res, caseId)) return;
+    }
     if (req.method === "POST" && WRITE_PATHS.has(pathOnly)) {
       const gate = allowWrite(req, writeKind(pathOnly));
       if (!gate.ok) {
@@ -386,7 +404,7 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "POST" && req.url === "/custody/hold") {
-      const j = JSON.parse((await readBody(req)).toString("utf8"));
+      const j = JSON.parse((req._cachedBody || (await readBody(req))).toString("utf8"));
       if (rejectSampleWrite(res, j.case_id || SAMPLE_CASE_ID)) return;
       const reason = String(j.reason || "").trim();
       if (!reason) {
@@ -420,8 +438,8 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "POST" && req.url === "/custody/open") {
-      const j = JSON.parse((await readBody(req)).toString("utf8"));
-      if (rejectSampleWrite(res, j.case_id)) return;
+      const j = JSON.parse((req._cachedBody || (await readBody(req))).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id || SAMPLE_CASE_ID)) return;
       const sent = await callOwner(
         "request_open",
         {
@@ -436,8 +454,8 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "POST" && req.url === "/custody/check") {
-      const j = JSON.parse((await readBody(req)).toString("utf8"));
-      if (rejectSampleWrite(res, j.case_id)) return;
+      const j = JSON.parse((req._cachedBody || (await readBody(req))).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id || SAMPLE_CASE_ID)) return;
       const expectedId = Number(j.expected_receipt_id);
       const chain = await getReceipt(expectedId);
       let commitBuf;
@@ -589,8 +607,8 @@ export async function handleRequest(req, res) {
       return;
     }
     if (req.method === "POST" && req.url === "/custody/grant") {
-      const j = JSON.parse((await readBody(req)).toString("utf8"));
-      if (rejectSampleWrite(res, j.case_id)) return;
+      const j = JSON.parse((req._cachedBody || (await readBody(req))).toString("utf8"));
+      if (rejectSampleWrite(res, j.case_id || SAMPLE_CASE_ID)) return;
       const sent = await callOwner(
         "grant",
         { case_id: j.case_id, account: j.account },

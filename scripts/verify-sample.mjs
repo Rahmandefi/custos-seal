@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Verify the FICTIONAL sample case (default: larkmoor-sample-v2) against the
- * live testnet contract. No NEAR AI key. No transactions.
+ * Verify FICTIONAL sample case receipts (default: larkmoor-sample-v2) against
+ * the live testnet contract. No NEAR AI key. No transactions.
  *
- * Recomputes finding_hash and citation hashes from samples/seed/ + evidence.
- * Older development receipts on the same contract are noted, not required.
+ * - Fully recomputes evidence commitments, finding_hash, and citation hashes
+ *   for sample Findings from samples/seed/.
+ * - Checks ed25519 signatures on ALL Findings on the contract (every case id).
+ * - Older development receipts on other case IDs are counted in the footer.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
@@ -78,21 +80,16 @@ async function main() {
   const seed = await loadSeedMeta();
   const n = await receiptCount();
   let failed = 0;
-  let sampleFindings = 0;
-  let otherReceipts = 0;
+  let sampleFindingsRecomputed = 0;
+  let olderOtherCase = 0;
 
   console.log(`contract ${CONTRACT}  receipts ${n}`);
   console.log(`sample case ${sampleCase} (default)`);
-  console.log(
-    "Note: older development receipts exist on the same contract; this verify defaults to the sample case."
-  );
   console.log("id\tkind\thash\tsig\tcitation\tnote");
 
   const salt = saltHex ? hexToBytes(saltHex) : null;
   const seedIds = new Set(
-    seed?.receipts
-      ? Object.values(seed.receipts).map((r) => Number(r.id))
-      : []
+    seed?.receipts ? Object.values(seed.receipts).map((r) => Number(r.id)) : []
   );
 
   for (let id = 0; id < n; id++) {
@@ -100,25 +97,28 @@ async function main() {
     const kind = kindName(rec.kind);
     const caseId = String(rec.case_id || "");
     const onSample = caseId === sampleCase || seedIds.has(id);
-    if (!onSample) {
-      otherReceipts++;
-      continue;
-    }
+    if (!onSample) olderOtherCase++;
 
     const f = rec.finding || {};
     let hashOk = "n/a";
     let sigOk = "n/a";
     let citOk = "n/a";
-    let note = caseId;
+    let note = caseId || "-";
 
     if (kind === "Finding" && f.model_id) {
-      sampleFindings++;
       const text = signedText(f.model_id, f.request_hash, f.response_hash);
       const sig = Buffer.from(f.signature);
       const pk = Buffer.from(f.signer_pubkey);
       sigOk = nacl.sign.detached.verify(Buffer.from(text, "utf8"), sig, pk) ? "ok" : "FAIL";
       if (sigOk === "FAIL") failed++;
 
+      if (!onSample) {
+        note = `${note} sig-only`;
+        console.log(`${id}\t${kind}\t${hashOk}\t${sigOk}\t${citOk}\t${note}`);
+        continue;
+      }
+
+      sampleFindingsRecomputed++;
       const local = shipped[id];
       const label =
         id === seed?.receipts?.accept?.id
@@ -159,7 +159,6 @@ async function main() {
         let hashesOk = true;
         if (citRecords.length) {
           const recomputed = citRecords.map((c) => {
-            // Seeded citation_records are already canonical; hash them directly.
             if (c.quote_sha256 && c.evidence_commitment) {
               return citationHash(salt, c).toString("hex");
             }
@@ -199,13 +198,15 @@ async function main() {
       } else {
         note = `${note} no sample salt`;
       }
+    } else if (!onSample) {
+      continue;
     }
 
     console.log(`${id}\t${kind}\t${hashOk}\t${sigOk}\t${citOk}\t${note}`);
   }
 
   console.log(
-    `\nSample findings checked: ${sampleFindings}. Other receipts on contract (skipped): ${otherReceipts}.`
+    `\nSample case: ${sampleFindingsRecomputed} Findings fully recomputed; ${olderOtherCase} older development receipts on this contract belong to other case IDs.`
   );
   if (failed) {
     console.error(`FAILED ${failed} check(s)`);

@@ -30,10 +30,11 @@ async function call(port, path, { method = "GET", headers = {}, body } = {}) {
   return { status: res.status, json };
 }
 
-test("POST /analyze against larkmoor-demo is refused before chain write", async () => {
+test("SAMPLE_READONLY protects larkmoor-sample-v2: analyze/custody/approve return 403", async () => {
+  assert.equal(SAMPLE_CASE_ID, "larkmoor-sample-v2");
   const { server, port } = await listen();
   try {
-    const out = await call(port, "/analyze", {
+    const analyze = await call(port, "/analyze", {
       method: "POST",
       headers: {
         "content-type": "application/octet-stream",
@@ -41,8 +42,41 @@ test("POST /analyze against larkmoor-demo is refused before chain write", async 
       },
       body: "sample-bytes",
     });
-    assert.equal(out.status, 403);
-    assert.equal(out.json.code, "SAMPLE_READONLY");
+    assert.equal(analyze.status, 403);
+    assert.equal(analyze.json.code, "SAMPLE_READONLY");
+
+    const approve = await call(port, "/custody/hold", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        case_id: SAMPLE_CASE_ID,
+        receipt_id: 19,
+        decision: false,
+        reason: "should not write",
+      }),
+    });
+    assert.equal(approve.status, 403);
+    assert.equal(approve.json.code, "SAMPLE_READONLY");
+
+    const custody = await call(port, "/custody/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        case_id: SAMPLE_CASE_ID,
+        expected_receipt_id: 17,
+        evidence_commitment: "aa".repeat(32),
+      }),
+    });
+    assert.equal(custody.status, 403);
+    assert.equal(custody.json.code, "SAMPLE_READONLY");
+
+    const open = await call(port, "/custody/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ case_id: SAMPLE_CASE_ID, reason: "should not write" }),
+    });
+    assert.equal(open.status, 403);
+    assert.equal(open.json.code, "SAMPLE_READONLY");
   } finally {
     server.close();
   }

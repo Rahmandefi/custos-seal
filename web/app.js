@@ -889,7 +889,21 @@ function viewReceipt() {
   const list2 = (arr) => (arr && arr.length ? arr.map((b) => `<div>${copyVal(hexOf(b))}</div>`).join("") : wait);
   const ts = rec.timestamp_ns ? new Date(Number(rec.timestamp_ns) / 1e6).toISOString().replace(".000", "") : "-";
   const contract = state.status?.contract || "ftcust15e434.testnet";
-  const findingRows = rec.finding || !loaded ? `
+  const kind = kindLabel(rec.kind);
+  const decidedHoldId = Number(String(rec.reason || "").match(/receipt=(\d+)/)?.[1]);
+  const holdLink =
+    (kind === "Rejection" || kind === "Approval") && Number.isFinite(decidedHoldId)
+      ? `<div><dt>Decided HOLD</dt><dd><a class="lnk" href="#/receipt/${decidedHoldId}">Receipt ${decidedHoldId} (HOLD) ${svg("arrow", 13)}</a></dd></div>`
+      : "";
+  const custodyNote =
+    kind === "CustodyCheck"
+      ? `<div><dt>Assertion</dt><dd>backend-asserted, no model signature</dd></div>`
+      : "";
+  const findingRows =
+    kind === "CustodyCheck"
+      ? ""
+      : rec.finding || !loaded
+        ? `
         <div><dt>Model</dt><dd class="mono">${esc(f.model_id || wait)}</dd></div>
         <div><dt>TCB status</dt><dd class="mono">${esc(f.tcb_status ? kindLabel(f.tcb_status) : wait)}</dd></div>
         <div><dt>Nonce</dt><dd class="mono">${hx(f.nonce)}</dd></div>
@@ -900,18 +914,21 @@ function viewReceipt() {
         <div><dt>Gateway report hash</dt><dd class="mono">${hx(f.gateway_report_hash)}</dd></div>
         <div><dt>Model report hash</dt><dd class="mono">${hx(f.model_report_hash)}</dd></div>
         <div><dt>Signer public key (ed25519)</dt><dd class="mono">${hx(f.signer_pubkey)}</dd></div>
-        <div><dt>Signature</dt><dd class="mono">${hx(f.signature)}</dd></div>` : "";
+        <div><dt>Signature</dt><dd class="mono">${hx(f.signature)}</dd></div>`
+        : "";
   return shell(
     "receipt",
     crumb(`Receipt ${rec.id}`),
     null,
-    `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${esc(kindLabel(rec.kind))} · ${esc(rec.case_id)} · ${esc(rec.actor)}</p></div>
+    `<div class="hd"><div><h1>Receipt ${rec.id}</h1><p class="lede">${esc(kind)} · ${esc(rec.case_id)} · ${esc(rec.actor)}</p></div>
       ${rec.policy_verdict ? verdictChip(rec.policy_verdict) : kindChip(rec.kind)}</div>
     <div class="card lim" data-tour-id="genReceipt">
       <dl class="kv">
-        <div><dt>Kind</dt><dd>${esc(kindLabel(rec.kind))}</dd></div>
+        <div><dt>Kind</dt><dd>${esc(kind)}</dd></div>
         <div><dt>Verdict</dt><dd>${esc(kindLabel(rec.policy_verdict))}</dd></div>
         <div><dt>Reason</dt><dd class="mono">${esc(rec.reason ?? "-")}</dd></div>
+        ${holdLink}
+        ${custodyNote}
         <div><dt>Recorded (UTC)</dt><dd class="mono">${ts}</dd></div>
         <div><dt>Evidence commitments</dt><dd class="mono">${list2(rec.evidence_commitments)}</dd></div>
         ${findingRows}
