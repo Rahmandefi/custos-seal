@@ -462,11 +462,21 @@ export async function handleRequest(req, res) {
       json(res, 200, { tx: sent.tx, method: "record_custody_check", matched });
       return;
     }
-    if (req.method === "GET" && req.url === "/health") {
+    if ((req.method === "GET" || req.method === "HEAD") && req.url === "/health") {
+      if (req.method === "HEAD") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end();
+        return;
+      }
       json(res, 200, { ok: true });
       return;
     }
-    if (req.method === "GET" && req.url === "/api/status") {
+    if ((req.method === "GET" || req.method === "HEAD") && req.url === "/api/status") {
+      if (req.method === "HEAD") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end();
+        return;
+      }
       json(res, 200, await statusPayload(req));
       return;
     }
@@ -627,7 +637,10 @@ export async function handleRequest(req, res) {
       }
       return;
     }
-    if (req.method === "GET" && (req.url === "/" || req.url?.startsWith("/web") || !req.url.startsWith("/api"))) {
+    if (
+      (req.method === "GET" || req.method === "HEAD") &&
+      (req.url === "/" || req.url?.startsWith("/web") || !req.url.startsWith("/api"))
+    ) {
       const path = req.url === "/" ? "/index.html" : req.url;
       const file = join(WEB, path.replace(/^\/web/, "").replace(/\?.*$/, ""));
       if (!file.startsWith(WEB)) {
@@ -646,6 +659,12 @@ export async function handleRequest(req, res) {
         } else if ([".css", ".svg", ".ico", ".png"].includes(ext)) {
           headers["Cache-Control"] = "public, max-age=31536000, immutable";
         }
+        if (req.method === "HEAD") {
+          headers["Content-Length"] = Buffer.byteLength(buf);
+          res.writeHead(200, headers);
+          res.end();
+          return;
+        }
         res.writeHead(200, headers);
         res.end(buf);
         return;
@@ -653,7 +672,14 @@ export async function handleRequest(req, res) {
         if (req.url === "/" || !req.url.includes(".")) {
           const raw = await readFile(join(WEB, "index.html"), "utf8");
           const buf = Buffer.from(raw.replaceAll("__ASSET_V__", ASSET_V));
-          res.writeHead(200, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" });
+          const headers = { "Content-Type": MIME[".html"], "Cache-Control": "no-store" };
+          if (req.method === "HEAD") {
+            headers["Content-Length"] = Buffer.byteLength(buf);
+            res.writeHead(200, headers);
+            res.end();
+            return;
+          }
+          res.writeHead(200, headers);
           res.end(buf);
           return;
         }
