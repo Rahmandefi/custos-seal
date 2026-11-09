@@ -644,3 +644,4 @@ header.top > .chip {
   .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
   .g{grid-template-columns:minmax(0,420px) minmax(0,1fr)}
 }
+.card.strip.idle{background:var(--bd);border-color:var(--be)}.card.strip.idle .sl{color:var(--u)}

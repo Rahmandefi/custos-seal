@@ -136,11 +136,8 @@ function assertCascade(view, failId, reasonRe) {
   assert.match(offline.label, /Independent offline check: scripts\/verify_report\.py/);
   const e2ee = view.rows.find((r) => r.id === "e2ee");
   assert.equal(e2ee.label, "Prompt encryption check");
-  assert.match(e2ee.detail, /configured e2ee=true/);
-  assert.match(
-    e2ee.detail,
-    /X-Model-Pub-Key (matched the verified signing key|did not match the verified signing key|vs signing key was not available for comparison)/
-  );
+  assert.match(e2ee.detail, /Prompt encrypted by the SDK/);
+  assert.match(e2ee.detail, /doesn't independently verify the key match/);
 }
 
 async function failAnalyze(outDir, opts) {
@@ -255,6 +252,9 @@ test("UI: in-flight analyze is a single pending state with no rows", () => {
   const view = panelView(freshAnalyzeState());
   assert.equal(view.pending, true);
   assert.equal(view.rows.length, 0);
+  const idle = panelView(null);
+  assert.equal(idle.stripClass, "idle");
+  assert.ok(idle.rows.some((r) => r.detail === "Not run"));
   assert.equal(view.chip, "Analyzing");
   assert.equal(view.headline, "Takes about a minute");
   assert.equal(view.tone, "idle");
@@ -320,6 +320,5 @@ test("UI: unknown failure reports whether a new receipt appeared for this case",
   analyze.receipt_count_after = 13;
   analyze.new_receipt_for_case = false;
   const copy = errorCopy(analyze);
-  assert.match(copy.body, /receipt_count 13 → 13/);
-  assert.match(copy.body, /no new receipt for this case/);
+  assert.equal(copy.headline, "No new receipt appeared (13 → 13)");
 });

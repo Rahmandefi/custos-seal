@@ -175,8 +175,8 @@ test("Verified panel truthfulness regression: valid evidence only executed check
     );
     const e2ee = view.rows.find((r) => r.id === "e2ee");
     assert.equal(e2ee.status, "pass");
-    assert.match(e2ee.detail, /configured e2ee=true/);
-    assert.match(e2ee.detail, /X-Model-Pub-Key matched the verified signing key/);
+    assert.match(e2ee.detail, /Prompt encrypted by the SDK/);
+    assert.match(e2ee.detail, /doesn't independently verify the key match/);
     assert.match(String(c.nonce.detail || c.nonce.reason), /Freshness: SDK attestation cache disabled \(TTL 0\)/);
   });
 });
@@ -365,7 +365,7 @@ test("Verified panel truthfulness regression: pending transaction remains unconf
     const copy = errorCopy(asAnalyze(err));
     const view = panelView(asAnalyze(err));
     assert.equal(view.chip, "Unable to verify");
-    assert.equal(copy.headline, "Recording not confirmed; a receipt may exist");
+    assert.equal(copy.headline, "Recording not confirmed");
     assert.match(copy.body, /ok-tx/);
     assert.ok(!/The contract was not called/.test(copy.body || ""));
     assert.ok(!/No verified finding was recorded/.test(copy.headline));
@@ -450,7 +450,9 @@ test("Verified panel truthfulness regression: missing and offline-only evidence 
   const none = panelView(null);
   assert.equal(none.chip, "No analysis yet");
   assert.equal(none.tone, "idle");
-  assert.equal(none.rows.length, 0);
+  assert.ok(none.rows.length >= 1);
+  assert.ok(none.rows.every((r) => r.detail === "Not run" || r.status === "not_in_request" || r.id === "e2ee" || r.id === "offline"));
+  assert.equal(none.stripClass, "idle");
 });
 
 test("Verified panel truthfulness regression: new run and failed run cannot display stale green results", () => {
@@ -702,7 +704,7 @@ test("Verified panel truthfulness regression: missing status never passes Record
     assert.equal(err.execution, "unknown");
     assert.equal(err.tx, "ok-tx");
     const copy = errorCopy(asAnalyze(err));
-    assert.equal(copy.headline, "Recording not confirmed; a receipt may exist");
+    assert.equal(copy.headline, "Recording not confirmed");
     assert.match(copy.body, /ok-tx/);
   });
 });
@@ -714,7 +716,7 @@ function assertUnknownOutcome(analyze) {
   assert.equal(analyze.skipChain, false);
   assert.equal(analyze.code, "ANALYSIS_OUTCOME_UNKNOWN");
   assert.equal(view.chip, "Unable to verify");
-  assert.equal(copy.headline, "Analysis outcome unknown; a receipt may exist.");
+  assert.equal(copy.headline, "Analysis outcome unknown");
   assert.match(copy.body, /Do not automatically resubmit/);
   assert.ok(!/The contract was not called/.test(copy.body || ""));
   assert.ok(!/The contract was not called/.test(copy.headline || ""));

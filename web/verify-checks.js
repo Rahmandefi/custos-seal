@@ -22,13 +22,44 @@ export const FRESHNESS_DETAIL =
 
 export const E2EE_CONFIGURED = true;
 export const E2EE_DETAIL =
-  "configured e2ee=true; X-Model-Pub-Key vs signing key was not available for comparison in this request";
+  "Prompt encrypted by the SDK; this app doesn't independently verify the key match.";
 
 export const OFFLINE_CHECK = {
   id: "offline",
   label: "Independent offline check: scripts/verify_report.py (REPORTDATA / dcap-qvl)",
   href: README_HREF,
 };
+
+/** Pre-run panel rows: neutral strip, every live row says Not run. Offline once. */
+export function idleCheckRows() {
+  return [
+    ...LIVE_CHECKS.map((r) => ({
+      id: r.id,
+      title: r.label,
+      label: r.label,
+      status: "not_run",
+      reason: "Not run",
+      detail: "Not run",
+    })),
+    {
+      id: "e2ee",
+      title: "Prompt encryption check",
+      label: "Prompt encryption check",
+      status: "not_run",
+      reason: E2EE_DETAIL,
+      detail: E2EE_DETAIL,
+    },
+    {
+      id: OFFLINE_CHECK.id,
+      title: OFFLINE_CHECK.label,
+      label: OFFLINE_CHECK.label,
+      status: "not_in_request",
+      reason: OFFLINE_DETAIL,
+      detail: OFFLINE_DETAIL,
+      href: README_HREF,
+    },
+  ];
+}
 
 export const OFFLINE_CHECKS = [OFFLINE_CHECK];
 
@@ -197,10 +228,9 @@ export function e2eePubKeyMatchesSigner(model) {
 }
 
 export function e2eeCheckDetail({ configured = E2EE_CONFIGURED, matched = null } = {}) {
-  const cfg = `configured e2ee=${configured ? "true" : "false"}`;
-  if (matched === true) return `${cfg}; X-Model-Pub-Key matched the verified signing key`;
-  if (matched === false) return `${cfg}; X-Model-Pub-Key did not match the verified signing key`;
-  return `${cfg}; X-Model-Pub-Key vs signing key was not available for comparison in this request`;
+  void configured;
+  void matched;
+  return E2EE_DETAIL;
 }
 
 export function failRowForError(code, checks) {
@@ -387,23 +417,25 @@ export function errorCopy(analyze) {
   const execution = analyze.execution || null;
   const skipChain = analyze.skip_chain ?? analyze.skipChain ?? true;
   const code = analyze.code;
-  if (code === "ANALYSIS_OUTCOME_UNKNOWN") {
-    const before = analyze.receipt_count_before;
-    const after = analyze.receipt_count_after;
-    const appeared = analyze.new_receipt_for_case;
-    let countNote = null;
-    if (before != null && after != null) {
-      countNote =
-        appeared != null
-          ? appeared
-            ? `receipt_count ${before} → ${after}; a new receipt appeared for this case.`
-            : `receipt_count ${before} → ${after}; no new receipt for this case.`
-          : `receipt_count ${before} → ${after}.`;
+  const before = analyze.receipt_count_before;
+  const after = analyze.receipt_count_after;
+  const newId = analyze.new_receipt_id;
+  const countHeadline = () => {
+    if (before == null || after == null) return null;
+    if (Number(before) === Number(after)) {
+      return `No new receipt appeared (${before} → ${after})`;
     }
+    if (newId != null) return `A new receipt appeared (id ${newId})`;
+    if (analyze.new_receipt_for_case) return `A new receipt appeared (${before} → ${after})`;
+    return `No new receipt appeared (${before} → ${after})`;
+  };
+
+  if (code === "ANALYSIS_OUTCOME_UNKNOWN") {
+    const headline = countHeadline() || "Analysis outcome unknown";
     return {
       chip: "Unable to verify",
-      headline: "Analysis outcome unknown; a receipt may exist.",
-      body: [tx ? `Transaction ${tx}.` : null, countNote, "Do not automatically resubmit."]
+      headline,
+      body: [tx ? `Transaction ${tx}.` : null, "Do not automatically resubmit."]
         .filter(Boolean)
         .join(" "),
       skipChain: false,
@@ -413,7 +445,7 @@ export function errorCopy(analyze) {
   if (execution === "failure") {
     return {
       chip: "Unable to verify",
-      headline: "Transaction failed",
+      headline: countHeadline() || "Transaction failed",
       body: tx
         ? `Transaction ${tx}. Do not automatically resubmit.`
         : "The submitted transaction did not succeed. Do not automatically resubmit.",
@@ -428,7 +460,7 @@ export function errorCopy(analyze) {
   ) {
     return {
       chip: "Unable to verify",
-      headline: "Recording not confirmed; a receipt may exist",
+      headline: countHeadline() || "Recording not confirmed",
       body: tx ? `Transaction ${tx}.` : null,
       skipChain: false,
       tx,
@@ -463,7 +495,7 @@ export function errorCopy(analyze) {
   }
   return {
     chip: "Unable to verify",
-    headline: "Recording not confirmed; a receipt may exist",
+    headline: countHeadline() || "Recording not confirmed",
     body: tx ? `Transaction ${tx}.` : null,
     skipChain: false,
     tx,
@@ -513,6 +545,7 @@ export function panelView(analyze) {
       title: "Verified panel",
       chip: "Analyzing",
       tone: "idle",
+      stripClass: "idle",
       pending: true,
       overall: "pending",
       headline: "Takes about a minute",
@@ -526,6 +559,7 @@ export function panelView(analyze) {
       title: "Recorded run",
       chip: "Recorded run",
       tone: "idle",
+      stripClass: "",
       overall: "recorded",
       headline: null,
       body: null,
@@ -545,15 +579,29 @@ export function panelView(analyze) {
   if (!checks) {
     const failed = Boolean(analyze?.error);
     const head = headerChip(analyze);
+    if (!failed && (!analyze || (!analyze.done && !analyze.running))) {
+      return {
+        title: "Verified panel",
+        chip: "No analysis yet",
+        tone: "idle",
+        stripClass: "idle",
+        overall: "idle",
+        pending: false,
+        headline: null,
+        body: null,
+        rows: idleCheckRows(),
+      };
+    }
     return {
       title: "Verified panel",
       chip: head.chip,
       tone: head.tone,
+      stripClass: head.tone === "idle" ? "idle" : "",
       overall: failed ? "failed" : head.overall,
       pending: false,
       headline: copy?.headline || null,
       body: copy?.body || null,
-      rows: [],
+      rows: failed ? idleCheckRows() : [],
     };
   }
   const overall = overallVerification(checks, analyze);
@@ -567,6 +615,7 @@ export function panelView(analyze) {
     title: "Verified panel",
     chip: head.chip,
     tone: head.tone,
+    stripClass: head.tone === "idle" ? "idle" : "",
     overall,
     pending: false,
     headline: header,
@@ -579,7 +628,7 @@ export function panelView(analyze) {
         label: r.label,
         status: r.status,
         reason: r.detail,
-        detail: r.detail,
+        detail: r.detail || (r.status === "not_run" ? "Not run" : null),
         href: r.href || m[r.id]?.href || null,
         evidence: m[r.id]?.evidence || null,
       };

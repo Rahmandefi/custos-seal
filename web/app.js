@@ -778,7 +778,10 @@ function checkRowHtml(row) {
         ? svg("x", 13, 2.6)
         : "·";
   const title = row.label || row.title;
-  const note = row.detail || row.reason || row.status;
+  const note =
+    row.detail ||
+    row.reason ||
+    (row.status === "not_run" || row.status === "not_in_request" ? "Not run" : row.status);
   const heading = row.href
     ? `<a class="lnk" href="${esc(row.href)}" target="_blank" rel="noreferrer">${esc(title)}</a>`
     : esc(title);
@@ -794,15 +797,14 @@ function sampleFindingReceipt() {
   );
 }
 
+function analyzeHasEvidence() {
+  return Boolean(state.analyzeEvidenceName || state.walk?.evidenceName);
+}
+
 function viewAnalyze() {
   const a = state.analyze;
   const demoFallback = Boolean(a?.demoLimitFallback);
-  const sampleMode =
-    demoFallback ||
-    ((state.walk.source === "sample" || state.setup.source === "sample") &&
-      !a?.done &&
-      !a?.running &&
-      !a?.error);
+  const sampleMode = demoFallback;
   const recordedReceipt = demoFallback ? a.receipt || sampleFindingReceipt() : sampleFindingReceipt();
   const view = sampleMode
     ? panelView({ recordedRun: true, receipt: recordedReceipt })
@@ -811,17 +813,27 @@ function viewAnalyze() {
   const overallOk = view.overall === "verified";
   const copy = errorCopy(a) || {};
   const panelTitle = view.title || (sampleMode ? "Recorded run" : "Verified panel");
+  const stripCls = `card strip${view.stripClass ? ` ${view.stripClass}` : view.tone === "idle" && !a?.done ? " idle" : ""}`;
   const banner = demoFallback
     ? `<div class="card" style="padding:12px 16px;border-color:var(--l);background:var(--h)" role="status"><b>${esc(
         a.banner || DEMO_LIMIT_BANNER
       )}</b></div>`
     : "";
   const panelBody = view.pending
-    ? `<div class="card strip"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Takes about a minute")}</p></div>`
-    : `<div class="card strip"><div class="sl">${esc(panelTitle)}</div>${
+    ? `<div class="${stripCls}"><div class="sl">${esc(panelTitle)}</div><p class="lede">${esc(view.headline || "Takes about a minute")}</p></div>`
+    : `<div class="${stripCls}"><div class="sl">${esc(panelTitle)}</div>${
         view.headline ? `<p class="lede">${esc(view.headline)}</p>` : ""
       }<div class="stps" style="grid-template-columns:repeat(2,1fr)">${rows}</div></div>`;
-  const result = a?.done && !demoFallback
+  const hasEvidence = analyzeHasEvidence();
+  const missingMsg = state.analyzeMissingEvidence
+    ? `<p class="lede" id="analyze-missing" role="status">Choose a file or use the sample evidence first</p>`
+    : "";
+  const evidenceLabel = state.analyzeEvidenceName
+    ? `<p class="lede">Selected: <span class="mono">${esc(state.analyzeEvidenceName)}</span>${
+        state.analyzeEvidenceFromSample ? " · FICTIONAL sample" : ""
+      }</p>`
+    : "";
+  const result = a?.done && !demoFallback && a?.requestSent
     ? a.error || view.overall === "failed"
       ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
           <div class="alab">${esc(copy.chip || view.chip || "Unable to verify")}</div>
@@ -841,21 +853,31 @@ function viewAnalyze() {
           <div class="alab">${esc(view.chip)}</div>
           <p class="lede">Checks that did not run stay unverified. Approval state is on Approvals, not this chip.</p>
         </div>`
-    : "";
+    : a?.done && !demoFallback && a?.error && a?.requestSent
+      ? `<div class="card" style="padding:16px 20px;border-color:var(--g);background:var(--d)">
+          <div class="alab">${esc(copy.chip || "Unable to verify")}</div>
+          <h2>${esc(copy.headline || a.error)}</h2>
+          <p class="lede">${esc(copy.body || "")}</p>
+        </div>`
+      : "";
   return shell(
     "analyze",
     crumb("Analysis"),
     null,
-    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt. REPORTDATA, RTMR3, MRCONFIGID, and NRAS are one offline line: scripts/verify_report.py (dcap-qvl).</p></div></div>
+    `<div class="hd"><div><h1>Run analysis</h1><p class="lede">This request checks SDK gateway/model TCB (UpToDate), nonce format, provider_tee, and citations. Recording requires successful FINAL execution of the submitted transaction and a matching on-chain receipt.</p></div></div>
     ${banner}
     <div class="card" style="padding:18px 20px">
       <form id="analyze-form">
         <label class="dl" for="ev">Evidence file</label>
-        <input id="ev" name="file" type="file" required />
-        <p class="lede">Use samples/larkmoor-listing.txt for the demo.</p>
-        <button class="btn primary" type="submit" ${a?.running ? "disabled" : ""}>${svg("list", 17)}${a?.running ? "Analyzing… Takes about a minute" : "Analyze"}</button>
+        <input id="ev" name="file" type="file" />
+        ${evidenceLabel}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <button class="btn primary" type="submit" ${a?.running || !hasEvidence ? "disabled" : ""}>${svg("list", 17)}${a?.running ? "Analyzing… Takes about a minute" : "Analyze"}</button>
+          <button class="btn" type="button" id="use-sample-evidence"${a?.running ? " disabled" : ""}>Use sample evidence (FICTIONAL)</button>
+        </div>
+        ${missingMsg}
         ${
-          a?.error || state.walk.analyzeError
+          a?.requestSent && (a?.error || state.walk.analyzeError)
             ? `<div class="ar done" style="background:var(--d);border-color:var(--g)"><span class="alab">${esc(
                 copy.chip || "Unable to verify"
               )}</span><p>${esc(copy.headline || copy.body || a?.error || state.walk.analyzeError)}</p></div>`
@@ -1869,21 +1891,91 @@ function bind() {
       await loadSampleIncident();
     };
   }
+  const useSampleEv = document.getElementById("use-sample-evidence");
+  if (useSampleEv) {
+    useSampleEv.onclick = async () => {
+      const s = await (await fetch("/api/sample")).json();
+      const file = new File([s.text || ""], s.name || "larkmoor-listing.txt", {
+        type: "text/plain",
+      });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const input = document.getElementById("ev");
+      if (input) input.files = dt.files;
+      state.analyzeEvidenceName = s.name || "larkmoor-listing.txt";
+      state.analyzeEvidenceFromSample = true;
+      state.analyzeMissingEvidence = false;
+      state.walk.evidenceText = s.text || "";
+      state.walk.evidenceName = state.analyzeEvidenceName;
+      if (s.salt) state.sampleSalt = s.salt;
+      persistWalk();
+      render();
+    };
+  }
   const af = document.getElementById("analyze-form");
   if (af) {
+    if (af.file) {
+      af.file.onchange = () => {
+        const f = af.file.files?.[0];
+        state.analyzeEvidenceName = f ? f.name : "";
+        state.analyzeEvidenceFromSample = false;
+        state.analyzeMissingEvidence = false;
+        render();
+      };
+    }
     af.onsubmit = async (e) => {
       e.preventDefault();
-      const file = af.file.files[0];
-      if (!file) return;
-      state.analyze = freshAnalyzeState();
+      const file = af.file?.files?.[0];
+      if (!file) {
+        state.analyzeMissingEvidence = true;
+        state.analyze = null;
+        state.walk.analyzeError = null;
+        render();
+        return;
+      }
+      state.analyzeMissingEvidence = false;
+      state.analyze = { ...freshAnalyzeState(), requestSent: false };
       render();
       const countBefore = Number(state.status?.chain_receipt_count ?? state.status?.receipt_count ?? 0);
-      const caseId = state.walk.caseId || state.cases.currentId || "";
+      let caseId = state.cases.currentId || "";
+      if (!/^[0-9a-f]{32}$/i.test(caseId)) {
+        caseId = newCaseId();
+        state.cases = addCase(state.cases, {
+          id: caseId,
+          name: state.walk.caseName || "Analysis case",
+          desc: state.walk.caseDesc || "From Analysis",
+          fromSample: Boolean(state.analyzeEvidenceFromSample),
+        });
+      }
+      // Never write against the read-only sample case id from the Analysis page.
+      if (caseId === SAMPLE_CASE_ID) {
+        caseId = newCaseId();
+        state.cases = addCase(state.cases, {
+          id: caseId,
+          name: "Analysis case",
+          desc: "Live analyze",
+          fromSample: Boolean(state.analyzeEvidenceFromSample),
+        });
+      }
+      state.walk.caseId = caseId;
+      persistWalk();
       const idsBefore = new Set(
         (state.status?.receipts || [])
           .filter((r) => caseId && String(r.case_id) === String(caseId))
           .map((r) => Number(r.id))
       );
+      const stampCounts = (analyze) => {
+        const countAfter = Number(state.status?.chain_receipt_count ?? state.status?.receipt_count ?? countBefore);
+        const newRec = (state.status?.receipts || []).find(
+          (r) => caseId && String(r.case_id) === String(caseId) && !idsBefore.has(Number(r.id))
+        );
+        analyze.receipt_count_before = countBefore;
+        analyze.receipt_count_after = countAfter;
+        analyze.new_receipt_for_case = Boolean(newRec);
+        analyze.new_receipt_id = newRec ? Number(newRec.id) : null;
+        analyze.requestSent = true;
+        return analyze;
+      };
       try {
         const res = await fetch("/analyze", {
           method: "POST",
@@ -1897,12 +1989,19 @@ function bind() {
         try {
           data = await res.json();
         } catch (parseErr) {
-          state.analyze = fromAnalyzeTransportFailure({
-            kind: "invalid_json",
-            error: parseErr,
-            tx: state.analyze?.tx || null,
-            checks: state.analyze?.checks,
-          });
+          try {
+            await loadStatus();
+          } catch {
+            /* still report */
+          }
+          state.analyze = stampCounts(
+            fromAnalyzeTransportFailure({
+              kind: "invalid_json",
+              error: parseErr,
+              tx: state.analyze?.tx || null,
+              checks: state.analyze?.checks,
+            })
+          );
           state.walk.analyzeError = state.analyze.error;
           persistWalk();
           render();
@@ -1912,24 +2011,30 @@ function bind() {
           if (res.status === 429 && (data?.code === "DEMO_LIMIT" || /DEMO_LIMIT/i.test(String(data?.code || "")))) {
             state.analyze = demoLimitFallbackAnalyze(sampleFindingReceipt());
             state.walk.analyzeError = null;
-            state.walk.source = state.walk.source || "sample";
             persistWalk();
             await loadStatus();
             state.analyze = demoLimitFallbackAnalyze(sampleFindingReceipt());
             render();
             return;
           }
-          state.analyze = fromAnalyzeHttp({
-            ok: false,
-            status: res.status,
-            data,
-            tx: data?.tx || state.analyze?.tx || null,
-            checks: data?.checks || state.analyze.checks,
-          });
+          try {
+            await loadStatus();
+          } catch {
+            /* keep before count */
+          }
+          state.analyze = stampCounts(
+            fromAnalyzeHttp({
+              ok: false,
+              status: res.status,
+              data,
+              tx: data?.tx || state.analyze?.tx || null,
+              checks: data?.checks || state.analyze.checks,
+            })
+          );
           state.walk.analyzeError = writeFailMsg(data, res.status);
           persistWalk();
         } else {
-          state.analyze = { done: true, ...data };
+          state.analyze = { done: true, requestSent: true, ...data };
           state.walk.analyzeError = null;
           state.walk.receiptId = data.receipt_id;
           state.walk.policy = data.policy;
@@ -1945,19 +2050,14 @@ function bind() {
         } catch {
           /* still report unknown */
         }
-        const countAfter = Number(state.status?.chain_receipt_count ?? state.status?.receipt_count ?? countBefore);
-        const newForCase = (state.status?.receipts || []).some(
-          (r) => caseId && String(r.case_id) === String(caseId) && !idsBefore.has(Number(r.id))
+        state.analyze = stampCounts(
+          fromAnalyzeTransportFailure({
+            kind: timeout ? "timeout" : "network",
+            error: err,
+            tx: state.analyze?.tx || null,
+            checks: state.analyze?.checks,
+          })
         );
-        state.analyze = fromAnalyzeTransportFailure({
-          kind: timeout ? "timeout" : "network",
-          error: err,
-          tx: state.analyze?.tx || null,
-          checks: state.analyze?.checks,
-        });
-        state.analyze.receipt_count_before = countBefore;
-        state.analyze.receipt_count_after = countAfter;
-        state.analyze.new_receipt_for_case = newForCase;
         state.walk.analyzeError = state.analyze.error;
       }
       render();
