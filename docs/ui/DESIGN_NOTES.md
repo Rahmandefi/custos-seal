@@ -99,7 +99,7 @@ Also applied:
   - These names were verified earlier this project in nearcore `verify_function_call_permission` (commit 863a2e2e64); see BUILD_FRAMEWORK.md §6.1.
 - The gas allowance is labelled a **fee budget, not a spending limit**.
 - These figures are **illustrative**, not live values: the 0.25 NEAR allowance, the 4.82 NEAR contract balance, the 10.00 NEAR writer balance and the 5 NEAR transfer amount.
-- **[TBD] Hex diff in B:** it needs the stored original bytes. The framework's backend keeps an encrypted evidence copy, so a byte diff is plausible, but the flow (decrypt-to-compare, who may see it) is undecided. The screen marks it "Concept · needs the stored original [TBD]". The "What's still safe" copy claims only that the on-chain custody record is unchanged.
+- **Hex diff in B (not built):** would need original evidence bytes. The product keeps evidence in the browser sessionStorage only; the server keeps no evidence copy. The mock-up marks hex diff as a concept. The "What's still safe" copy claims only that the on-chain custody record is unchanged.
 - Hashes on B are SHA-256 of a fictional log with a salt and are illustrative. The changed byte is real for that fictional file (offset 0x0000B5, line 3, 245 bytes).
 - On-prem remains a roadmap goal. NEAR hasn't published an on-prem version. None of these screens imply otherwise.
 

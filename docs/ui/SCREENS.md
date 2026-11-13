@@ -27,7 +27,7 @@ This same flow doubles as the demo path and the README "do X, see Y" steps.
 
 Three columns.
 
-- **Left: Evidence panel.** Files with name, size, salted commitment hash (short, with copy), "encrypted at rest" label, and an Upload button.
+- **Left: Evidence panel.** Files with name, size, salted commitment hash (short, with copy), "evidence stays in this browser session" label, and an Upload button.
 - **Center: Timeline (the spine).** One chronological feed mixing uploads, analyses, findings, opens, denied opens, approvals, rejections, and custody checks. Each entry shows time, actor (account), action, and a verdict badge (ACCEPT, FLAG, BLOCK, HOLD). Filters across the top by type and verdict.
 - **Right: Detail drawer.** Shows whatever is selected: a finding, a receipt, or a file.
 

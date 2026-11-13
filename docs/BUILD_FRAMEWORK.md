@@ -1,9 +1,11 @@
+> **Archive.** Historical design notes from Nov 2026. Current product facts are in `README.md`. Open `[not built — see README]` items below are superseded unless restated in the README.
+
 # Custos Seal · Private Forensic Triage Assistant: Build Framework
 
 **NEAR Hackathon entry · Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`)**
 Prepared Wed Nov 4, 2026 (Lagos, UTC+1). Submissions close **Nov 14, 2026, 23:59 UTC** (Nov 15, 00:59 Lagos). Judging Nov 16-18, 2026.
 
-> **How to read this document.** Every technical claim was checked this session against NEAR documentation, GitHub source, npm/PyPI/crates.io package pages or live endpoints, opened on Nov 4, 2026. Each section ends with its sources. **[UNVERIFIED]** marks something we could not confirm. **[TBD]** marks a decision the team still has to make. "Live check" means we ran it ourselves against the production endpoint on Nov 4, 2026 between 22:40 and 23:20 Lagos time. **Required design fixes R1-R3** (citations on every finding, a writer key scoped to one contract, receipts stored on-chain at creation) were added at 23:20 Lagos and are summarized in §3.1.
+> **How to read this document.** Every technical claim was checked this session against NEAR documentation, GitHub source, npm/PyPI/crates.io package pages or live endpoints, opened on Nov 4, 2026. Each section ends with its sources. **[UNVERIFIED]** marks something we could not confirm. **[not built — see README]** marks a decision the team still has to make. "Live check" means we ran it ourselves against the production endpoint on Nov 4, 2026 between 22:40 and 23:20 Lagos time. **Required design fixes R1-R3** (citations on every finding, a writer key scoped to one contract, receipts stored on-chain at creation) were added at 23:20 Lagos and are summarized in §3.1.
 
 ---
 
@@ -14,7 +16,7 @@ Prepared Wed Nov 4, 2026 (Lagos, UTC+1). Submissions close **Nov 14, 2026, 23:59
 | Item | Decision |
 | --- | --- |
 | Inference | NEAR AI Cloud, **Confidential TEE** tier only: models served by NEAR on its own GPU fleet. We don't use the 3P Confidential TEE tier or the Incognito tier. |
-| Model | **[TBD]** Pick one canonical model ID from the Confidential TEE chat models in §5.2. The suggested default is `z-ai/glm-5.3-flash`. |
+| Model | **[not built — see README]** Pick one canonical model ID from the Confidential TEE chat models in §5.2. The suggested default is `z-ai/glm-5.3-flash`. |
 | Verification | `@nearai/inference-sdk` 0.2.1 (Node entry point), configured to verify on every request, with Ed25519 signing and E2EE on. We also run an independent check of the same report with `dcap-qvl`. |
 | Chain | NEAR **testnet**, with a Rust contract built on `near-sdk` 5.30.0 and deployed with `cargo-near` 0.22.0 and `near-cli-rs` 0.30.1. |
 | Layers | (1) enclave-sealed analysis · (2) deterministic policy checks outside the model · (3) signed, timestamped receipts on NEAR · (4) a human decides every irreversible action |
@@ -149,7 +151,7 @@ Not eligible for our design: `chutes` and `tinfoil` models (3P), and every `exte
 - **The 60-minute "record expiry" is client-side.** `responseCacheTimeToLiveMs` defaults to 3,600,000 and starts at body completion. It's the SDK's in-memory copy of the exact request and response bytes needed by `verifyResponse()`. Expired or unknown IDs fail with `api.completion_not_found`. It's not a documented server-side retention period. How long `/v1/signature/{id}` keeps answering is not documented **[UNVERIFIED]**. *Decision: verify immediately, inside the same request handler.*
 - `verifyResponse()` returns only `id` and `signatureKind`. For the receipt we also need `signedText`, `signature` and `signer`. We get these from the SDK's `fetchCompletionSignature()` (`CompletionSignature { kind, signedText, signature, signer }`) or from `GET /v1/signature/{id}` directly.
 - Messages and Responses get **gateway** signatures only, and the Node entry point binds later requests to the verified gateway TLS identity (the browser entry point can't).
-- By default the SDK **doesn't** check model measurements against an approved-deployment allowlist. A `deploymentPolicy` callback can add one **[TBD whether we pin measurements]**.
+- By default the SDK **doesn't** check model measurements against an approved-deployment allowlist. A `deploymentPolicy` callback can add one **[not built — see README]**.
 
 ### 5.4 NEAR smart-contract side
 
@@ -230,7 +232,7 @@ pub struct SignedFinding {                  // R3: everything a later check need
 
 The contract rebuilds the signed text from the stored fields, so the stored fields and the verified signature can't disagree. NEAR's docs specify that an Ed25519 response signature is checked over the UTF-8 bytes of that text with `signing_address` as the public key, which is exactly what `env::ed25519_verify` does. **What the on-chain check covers:** an approved model key signed these request and response hashes. The contract can't see the response bytes, so `finding_hash` and `citation_hashes` are checked off-chain by recomputing them from the retained response bytes (the "Verify from chain" button, §9).
 
-**Storage estimate per Finding receipt (calculated from the sketch, not yet measured):** With 2 evidence commitments and 3 citations, the Borsh-encoded receipt is about 580 bytes (hashes, signature and public key ≈ 450 bytes; IDs and strings ≈ 90; the rest is lengths, tags and the timestamp). Add about 5 bytes of key and the protocol's 40-byte record overhead. The `seen_responses` entry adds about 33 + 40 bytes, and the case-index entry about 75 bytes. **Total ≈ 770 bytes ≈ 0.0077 NEAR staked per Finding receipt** at 1e19 yoctoNEAR/byte. Each extra citation adds 32 bytes (0.00032 NEAR). Storing both full quotes instead would add about 10 KB (≈ 0.1 NEAR) per receipt. **Who pays:** a function-call key can't attach a deposit, so the contract account pays this storage from its own balance, and NEAR fails the transaction if that balance can't cover the new storage. The contract must be funded from measured costs, and the UI shows its balance. **Gas:** one `ed25519_verify` over a ~150-byte signed text costs about 0.21 TGas + 150 × 9 Mgas ≈ 0.211 TGas. The final bytes and gas per receipt are measured on Day 3 **[TBD]**. Adding a grantee costs about 100 bytes, or about 0.001 NEAR. Unbounded writes by strangers (`request_open` from non-grantees) are a **storage-cost attack** vector (docs.near.org/smart-contracts/security/storage). *Mitigation:* require a small attached deposit on `request_open` (marked `#[payable]`), or cap denied-attempt records per account per case **[TBD]**. We'll measure real gas and storage on Day 3 **[TBD]**.
+**Storage estimate per Finding receipt (calculated from the sketch, not yet measured):** With 2 evidence commitments and 3 citations, the Borsh-encoded receipt is about 580 bytes (hashes, signature and public key ≈ 450 bytes; IDs and strings ≈ 90; the rest is lengths, tags and the timestamp). Add about 5 bytes of key and the protocol's 40-byte record overhead. The `seen_responses` entry adds about 33 + 40 bytes, and the case-index entry about 75 bytes. **Total ≈ 770 bytes ≈ 0.0077 NEAR staked per Finding receipt** at 1e19 yoctoNEAR/byte. Each extra citation adds 32 bytes (0.00032 NEAR). Storing both full quotes instead would add about 10 KB (≈ 0.1 NEAR) per receipt. **Who pays:** a function-call key can't attach a deposit, so the contract account pays this storage from its own balance, and NEAR fails the transaction if that balance can't cover the new storage. The contract must be funded from measured costs, and the UI shows its balance. **Gas:** one `ed25519_verify` over a ~150-byte signed text costs about 0.21 TGas + 150 × 9 Mgas ≈ 0.211 TGas. The final bytes and gas per receipt are measured on Day 3 **[not built — see README]**. Adding a grantee costs about 100 bytes, or about 0.001 NEAR. Unbounded writes by strangers (`request_open` from non-grantees) are a **storage-cost attack** vector (docs.near.org/smart-contracts/security/storage). *Mitigation:* require a small attached deposit on `request_open` (marked `#[payable]`), or cap denied-attempt records per account per case **[not built — see README]**. We'll measure real gas and storage on Day 3 **[not built — see README]**.
 
 *Sources:* docs.near.org/tools/sdk · github.com/near/near-sdk-js (archived; README) · github.com/near/near-sdk-as (archived) · crates.io near-sdk / cargo-near / near-cli-rs / near-workspaces · near-sdk 5.30.0 source `src/environment/env.rs` · docs.near.org/smart-contracts/quickstart · docs.near.org/smart-contracts/release/deploy · docs.near.org/getting-started/faucet · docs.near.org/protocol/storage/storage-staking · docs.near.org/protocol/transactions/gas · docs.near.org/smart-contracts/anatomy/environment · docs.near.org/smart-contracts/anatomy/collections · docs.near.org/smart-contracts/anatomy/events · docs.near.org/protocol/transactions/transaction-execution · docs.near.org/protocol/accounts-contracts/access-keys · docs.near.org/web3-apps/quickstart · docs.near.org/web3-apps/backend/backend · docs.near.org/smart-contracts/security/storage · live RPC `gas_price` / `EXPERIMENTAL_protocol_config` on rpc.testnet.near.org and rpc.mainnet.near.org · npm `@hot-labs/near-connect`, `near-api-js`
 
@@ -245,7 +247,7 @@ The contract rebuilds the signed text from the stored fields, so the stored fiel
 | Collateral | Certificates, CRLs and TCB info from a PCCS (Phala's by default) or Intel PCS, checked against the current time. Fully offline verification is possible with collateral you already hold. |
 | What dstack adds | `info.tcb_info` exposes `mrtd`, `rtmr0-3`, `os_image_hash`, `compose_hash`, `app_compose` and `event_log`. RTMR3 is extended with app events such as `app-id` and `compose-hash`, which the replay authenticates. |
 
-**Our TCB policy:** accept `UpToDate` only, and record `advisory_ids` in the receipt. If NEAR's fleet reports anything else during the demo window, show it as **Unverified (policy)** rather than silently accepting it **[TBD: fallback to also allow `SWHardeningNeeded`?]**.
+**Our TCB policy:** accept `UpToDate` only, and record `advisory_ids` in the receipt. If NEAR's fleet reports anything else during the demo window, show it as **Unverified (policy)** rather than silently accepting it **[not built — see README]**.
 
 *Sources:* github.com/Phala-Network/dcap-qvl (README, `src/quote.rs`, `src/tcb_info.rs`) · pypi.org/project/dcap-qvl · npmjs.com/package/@phala/dcap-qvl · docs.near.ai/cloud/verification/reference/quote-nonce-signer · live quote parse (Nov 4, 2026)
 
@@ -257,7 +259,7 @@ NEAR AI Cloud provides private inference only. It doesn't store documents or man
 
 | | Layer A: storage at rest | Layer B: per-request transport to the enclave |
 | --- | --- | --- |
-| Key | Per-case data key (AES-256-GCM) held by the investigator's app and wrapped by an app master key **[TBD: KMS vs local keyfile]** | A fresh client key pair per request, encrypted to the enclave's **attested** model public key |
+| Key | Per-case data key (AES-256-GCM) held by the investigator's app and wrapped by an app master key **[not built — see README]** | A fresh client key pair per request, encrypted to the enclave's **attested** model public key |
 | Protects | Evidence files and finding JSON in our storage | Prompt and response content between our backend and the model TEE. The gateway relays only ciphertext for the covered fields. |
 | Never | Sent to NEAR AI Cloud or written on-chain | Reused for storage, or persisted |
 
@@ -274,7 +276,7 @@ NEAR AI Cloud provides private inference only. It doesn't store documents or man
 
 **Which key.** A NEAR **function-call access key** on the backend's NEAR account (`writer`), added with `receiver_id` = the receipt contract and `method_names` = `["record_finding", "record_custody_check"]`. The backend never holds a full-access key. The human keeps the full-access key for `writer` offline, so the account can't lock itself out. This is **not** the NEAR AI Cloud API key: that one is a bearer token for inference, held in the backend's environment, and it isn't a NEAR access key.
 
-**Allowance.** We set a finite gas `allowance` **[TBD amount, from Day 3 measurements]**, so a stolen key can only spend a bounded amount of gas. When it runs out, every transaction fails with `NotEnoughAllowance`. An existing key's allowance can't be changed, so the human adds a new key with the full-access key.
+**Allowance.** We set a finite gas `allowance` **[not built — see README]**, so a stolen key can only spend a bounded amount of gas. When it runs out, every transaction fails with `NotEnoughAllowance`. An existing key's allowance can't be changed, so the human adds a new key with the full-access key.
 
 **What the NEAR protocol rejects.** These checks are in nearcore's `verify_function_call_permission` (`runtime/runtime/src/verifier.rs`, commit 863a2e2e64). The errors are variants of `InvalidAccessKeyError` (`core/primitives/src/errors.rs`):
 
@@ -285,7 +287,7 @@ NEAR AI Cloud provides private inference only. It doesn't store documents or man
 | Call a receipt-contract method not in `method_names` (for example `grant`) | `MethodNameMismatch` |
 | Attach a NEAR deposit to a call | `DepositWithFunctionCall` |
 
-These checks run when the transaction is validated (`InvalidTxError`), so a rejected transaction isn't executed and leaves nothing on-chain. The attack demo shows the error returned to the client, not an explorer link. The exact CLI output is captured on Day 3 **[TBD]**.
+These checks run when the transaction is validated (`InvalidTxError`), so a rejected transaction isn't executed and leaves nothing on-chain. The attack demo shows the error returned to the client, not an explorer link. The exact CLI output is captured on Day 3 **[not built — see README]**.
 
 **What a stolen key can still do.** Call `record_finding` and `record_custody_check` until the allowance runs out. A forged finding still needs a valid Ed25519 signature from an approved model key over a response hash the contract hasn't seen, so an attacker can't invent findings or replay old ones. `record_custody_check` carries no model signature, so CustodyCheck receipts are labeled as backend-asserted. The number of writes, and so the storage they can lock, is bounded by the allowance. The README must state all of these limits.
 
@@ -315,11 +317,11 @@ The policy engine runs after signature verification and before a receipt is writ
 | Rule | Check | Verdict on failure |
 | --- | --- | --- |
 | P1 Schema | The output parses as our JSON schema: `findings[]`, each with `claim`, `citations[]` (`evidence_id`, `line_start`, `line_end`, `quote`), `iocs[]`, `recommended_actions[]`, `confidence` | BLOCK |
-| P2 Citations (R1) | Every finding has at least one citation. `evidence_id` is a file sent in this request. The line range exists in that file. `quote` is non-empty, at most **[TBD]** bytes, and occurs **byte-for-byte** in the original file bytes within those lines, with no whitespace or case normalization. Every IP, hash, filename or path in the finding's `iocs` appears verbatim inside one of its cited spans. | Missing, out-of-range or non-matching citation: **BLOCK** (shown as "rejected: citation check failed", never as a result). IOC outside its cited spans: FLAG. |
+| P2 Citations (R1) | Every finding has at least one citation. `evidence_id` is a file sent in this request. The line range exists in that file. `quote` is non-empty, at most **[not built — see README]** bytes, and occurs **byte-for-byte** in the original file bytes within those lines, with no whitespace or case normalization. Every IP, hash, filename or path in the finding's `iocs` appears verbatim inside one of its cited spans. | Missing, out-of-range or non-matching citation: **BLOCK** (shown as "rejected: citation check failed", never as a result). IOC outside its cited spans: FLAG. |
 | P3 Provenance | `signature_kind == provider_tee`, the signer is in the verified set, and TCB is within policy | BLOCK (no receipt) |
 | P4 Irreversible action | Any action in {isolate_host, block_ip, delete, notify_external, share_outside_case} | **HOLD** until the investigator calls `approve_action` |
 | P5 Injection markers | Evidence text containing instruction-like strings (e.g. "ignore previous instructions") is flagged. Evidence is always passed as quoted data, never as instructions. | FLAG |
-| P6 Confidence floor | `confidence < threshold` **[TBD value]** | FLAG |
+| P6 Confidence floor | `confidence < threshold` **[not built — see README]** | FLAG |
 
 **How citations work (R1).** The backend sends each evidence file to the model with our own line numbers (`E1:0001| …`), and the prompt requires the citation format above. The checker maps line numbers back to exact byte ranges in the original file and records the matched byte offsets. Each passing citation becomes a record `{evidence_commitment, line_start, line_end, byte_start, byte_end, sha256(quote)}`. Its salted hash `sha256(case_salt ‖ record)` goes into the receipt; the salt stops anyone from guessing a short quote by brute force. A BLOCKed finding is still recorded, with verdict BLOCK, so the record shows that the model said it and the engine rejected it.
 
@@ -380,7 +382,7 @@ Two demo beats produce **no receipt**, by design. Attempts to misuse the writer 
 
 | Time | Action | What the judge sees |
 | --- | --- | --- |
-| 0:00-0:12 | State the problem in one line, then upload `samples/larkmoor-log.txt` (FICTIONAL) | File hashed in the browser. The commitment is shown and the stored file is labeled "encrypted at rest". |
+| 0:00-0:12 | State the problem in one line, then upload `samples/larkmoor-log.txt` (FICTIONAL) | File hashed in the browser. The commitment is shown. Evidence stays in the visitor session; the server keeps no evidence copy. |
 | 0:12-0:35 | Click **Analyze** | A live **Verified panel** shows only checks this request ran: gateway TCB, model TCB, nonce format, `provider_tee`, citations, optional independent DCAP, then recording after FINAL execution plus a matching receipt. RTMR3, MRCONFIGID, NRAS, and encryption stay unverified. The chip is not plain Verified when binding or DCAP is unsupported. |
 | 0:35-0:52 | The finding appears **with citations (R1)** | Each finding shows its citations. Clicking one highlights the exact span in the evidence, with "citation check ✓ byte-for-byte". Then a labeled test fixture with a fabricated quote runs: **BLOCK, citation check failed**. |
 | 0:52-1:10 | The receipt **stored on-chain at creation (R3)** | NEAR testnet transaction link; the stored receipt fields (hashes, signature, signer, report hashes, nonce, citation hashes, timestamp); "`ed25519_verify` passed at write time". **Verify from chain** recomputes the hashes from the retained bytes with no NEAR AI Cloud call. **Verify independently** opens `cloud.near.ai/verify?model=…#receipt=…` and shows **Reply verified**. |
@@ -399,7 +401,7 @@ Build order follows the risk: prove one verified call first, then the receipt co
 
 | Day | Date | Deliverable | Done when |
 | --- | --- | --- | --- |
-| 1 | Thu Nov 5 | Repo, LICENSE (MIT, **[TBD]** team confirms), README skeleton for AI judges, `.env.example`, `.gitignore`, Node 24.22.x. Get credits and an API key. `scripts/verify-one.mjs`: `InferenceClient({ signingAlgo:'ed25519', e2ee:true, attestationCacheTimeToLiveMs:0 })`, one non-streaming completion, `verifyResponse`, fetch the signature, keep the exact request/response bytes, write `out/receipt.json` with every R3 field. `scripts/verify_report.py`: an independent dcap-qvl check of the same report. Test a JSON-schema `response_format` with E2EE on the chosen model and record the result (R1). | The script prints `provider_tee` and all checks pass. Its output is pasted into the README. The structured-outputs result is written down. |
+| 1 | Thu Nov 5 | Repo, LICENSE (MIT, **[not built — see README]** team confirms), README skeleton for AI judges, `.env.example`, `.gitignore`, Node 24.22.x. Get credits and an API key. `scripts/verify-one.mjs`: `InferenceClient({ signingAlgo:'ed25519', e2ee:true, attestationCacheTimeToLiveMs:0 })`, one non-streaming completion, `verifyResponse`, fetch the signature, keep the exact request/response bytes, write `out/receipt.json` with every R3 field. `scripts/verify_report.py`: an independent dcap-qvl check of the same report. Test a JSON-schema `response_format` with E2EE on the chosen model and record the result (R1). | The script prints `provider_tee` and all checks pass. Its output is pasted into the README. The structured-outputs result is written down. |
 | 2 | Fri Nov 6 | Rust contract (`cargo near new`): the full `SignedFinding` receipt stored at creation (R3), signed text rebuilt on-chain + `ed25519_verify` in `record_finding`, replay set, citation-hash rule, approved signers, allowlist, NEP-297 events, non-panicking `request_open`. Unit tests. Testnet accounts via `--useFaucet`. Deploy. | `near view` returns a receipt written from Day 1's real signature with every R3 field. Tests reject a flipped signature byte and a replayed response hash. |
 | 3 | Sat Nov 7 | Backend → contract integration with a NEAR **function-call key** (receiver = receipt contract, methods = writer methods, finite allowance) (R2). `scripts/attack-key`: transfer, other-contract call, disallowed method, attached deposit; capture each error. `near-workspaces` sandbox tests: grant, open, deny, approve, bad signature. Measure gas and storage per receipt. | Tests are green. All four attack attempts are rejected with the expected errors. The README cost table is filled in with measured numbers. |
 | 4 | Sun Nov 8 | Front end: wallet connect (near-connect), upload, browser hashing, Layer A encryption, Verified panel, receipt viewer, citation highlighting (R1), "Verify from chain" (R3), Verification Center deep link | The full happy path works in the UI |
@@ -412,7 +414,7 @@ Build order follows the risk: prove one verified call first, then the receipt co
 
 **Deferred (not in this build):** NEAR Intents Agent API, private or on-prem deployment, multi-user agency roles, TLS-binding UI, image-provenance policy, mainnet deployment, on-chain quote verification, OHTTP.
 
-**What the AI screeners check (Q-017, HACKATHON.md):** Claude Code and Codex do "reproducibility check, feature verification, structured report, preliminary score". **Humans decide**, and "a low AI score alone cannot reject." They read the README "for a machine reader": what the product is, the problem, and "do X, see Y" steps. "No marketing." So every feature claimed in the README must exist in code and be runnable. Mark TBD items before submitting, or delete them.
+**What the AI screeners check (Q-017, HACKATHON.md):** Claude Code and Codex do "reproducibility check, feature verification, structured report, preliminary score". **Humans decide**, and "a low AI score alone cannot reject." They read the README "for a machine reader": what the product is, the problem, and "do X, see Y" steps. "No marketing." So every feature claimed in the README must exist in code and be runnable. Mark not built — see README items before submitting, or delete them.
 
 *Sources:* nearhackathon.com/HACKATHON.md · github.com/nearai/near-hackathon-prompt-examples (README, 00-setup.md, SUBMITTING.md, tracks/03, tracks/06)
 
@@ -426,21 +428,21 @@ Build order follows the risk: prove one verified call first, then the receipt co
 | No complete model→gateway→response chain | Gateway and model evidence aren't cryptographically chained per response | Document it. Use non-streaming requests without aliases so the reply carries `provider_tee`. |
 | The SDK's default TCB policy also accepts `OutOfDate` | Weaker than we claim | Override with `acceptedTcbStatuses: ['UpToDate']` |
 | Collateral comes from Phala PCCS by default | Trust in a third-party collateral cache | Optionally switch to Intel PCS (`INTEL_PCS_URL`) |
-| No allowlist of approved measurements by default | "Verified" ≠ "approved deployment" | Record `compose_hash`/`mr_td` in the receipt. Pinning is **[TBD]**. |
+| No allowlist of approved measurements by default | "Verified" ≠ "approved deployment" | Record `compose_hash`/`mr_td` in the receipt. Pinning is **[not built — see README]**. |
 | The backend holds the storage key | A compromised backend can leak evidence | Scope the claim honestly. Roadmap: key release in a TEE. |
 | Public-chain metadata | Commitments and account IDs are public | Salted commitments, no plaintext on-chain, testnet only |
-| Storage-cost griefing via `request_open` | The contract's balance gets locked | Attached deposit or a rate cap **[TBD]** |
+| Storage-cost griefing via `request_open` | The contract's balance gets locked | Attached deposit or a rate cap **[not built — see README]** |
 | Model output quality | Wrong triage | R1 citations checked byte-for-byte (P2), plus HOLD for irreversible actions. "Triage, not a court-certified forensic product." |
 | A plausible but false finding | A wrong conclusion that no rule contradicts | R1: no finding is shown without citations that match the evidence. Residual: a correct quote with a wrong interpretation still passes, so FLAG, HOLD and human review stay. |
-| The model often returns missing or inexact citations | Many findings BLOCKed | Line-numbered input and a strict output format; structured outputs if they work with E2EE **[UNVERIFIED]**; quote length limit **[TBD]** |
-| Stolen writer key | Bogus writes until the allowance runs out | R2 scope (no transfers, no key changes, no other contracts or methods, no deposits). Findings still need a valid model signature over an unseen response hash. Finite allowance **[TBD]**. |
+| The model often returns missing or inexact citations | Many findings BLOCKed | Line-numbered input and a strict output format; structured outputs if they work with E2EE **[UNVERIFIED]**; quote length limit **[not built — see README]** |
+| Stolen writer key | Bogus writes until the allowance runs out | R2 scope (no transfers, no key changes, no other contracts or methods, no deposits). Findings still need a valid model signature over an unseen response hash. Finite allowance **[not built — see README]**. |
 | Contract balance runs out | Receipt writes fail | The function-call key can't attach a deposit, so the contract pays storage. Fund it from the measured per-receipt cost and show the balance in the UI. |
 | The model's signing key changes | New signatures fail the approved-signer check | The owner approves the new key after attestation. How often NEAR rotates model keys **[UNVERIFIED]**. |
 | The on-chain check covers the signature, not the content | `finding_hash` and `citation_hashes` are supplied by the writer | "Verify from chain" recomputes them from the retained response bytes. The README states this. |
 | Rate limits and outages on NEAR AI Cloud **[UNVERIFIED]** | Demo failure | Pre-record the video. The fail-closed path is part of the demo. |
-| Very large evidence files | Context and cost limits | Chunk to ≤ 100k tokens per request **[TBD]** (glm-5.3-flash's model metadata lists `base_max_context_tokens: 100000`, with long-context routing up to 1,048,576) |
+| Very large evidence files | Context and cost limits | Chunk to ≤ 100k tokens per request **[not built — see README]** (glm-5.3-flash's model metadata lists `base_max_context_tokens: 100000`, with long-context routing up to 1,048,576) |
 
-**Honesty note: on-prem.** Private or on-prem deployment for agencies is **our roadmap goal, not a current NEAR offering**. NEAR has not published an on-prem version of NEAR AI Cloud. Intel TDX itself is standard hardware that can run on-prem or in a private cloud, so the plan is technically grounded, but this document doesn't claim it exists. Agencies named as target types (for example a metropolitan police department) are not partners or customers.
+**Honesty note: on-prem.** Private or on-prem deployment for agencies is **our roadmap goal, not a current NEAR offering**. NEAR has not published an on-prem version of NEAR AI Cloud. Intel TDX itself is standard hardware that can run on-prem or in a private cloud, so the plan is technically grounded, but this document doesn't claim it exists. Agencies named as target types (for example a metropolitan incident-response unit (FICTIONAL target type, not a partner)) are not partners or customers.
 
 *Sources:* docs.near.ai/cloud/verification/cloud-api/response-signatures · docs.near.ai/cloud/verification/cloud-api/model-attestations · github.com/nearai/inference-sdk/blob/main/js/docs/verification-guide.md · live `/v1/model/z-ai%2Fglm-5.3-flash` · docs.near.org/smart-contracts/security/storage
 
@@ -477,17 +479,17 @@ Build order follows the risk: prove one verified call first, then the receipt co
 13. **Hackathon dates:** the event officially starts Nov 1, 2026, and code written from the Oct 19 announcement counts. The **payout account must be a mainnet NEAR account.** A LICENSE file is required. Submission can go through the API as well as the form.
 14. **Track-prompt requirements:** the Privacy prompt asks for a **Verified panel**, **nothing kept server-side**, and **fictional sample docs**. The Security prompt asks for a **function-call key scoped to one contract** and an **attack demo**. All are now in the plan.
 
-## 14. Items marked [UNVERIFIED] / [TBD]
+## 14. Items marked [UNVERIFIED] / [not built — see README]
 
 **[UNVERIFIED]**
-- An end-to-end paid completion plus `verifyResponse()` → `provider_tee` (no API key this session)
+- An full-path paid completion plus `verifyResponse()` → `provider_tee` (no API key this session)
 - How long `/v1/signature/{id}` stays retrievable on the server
 - NEAR AI Cloud rate limits
 - Whether DCAP quote verification is feasible inside a NEAR contract (not attempted, out of scope)
 - A JSON-schema `response_format` used together with E2EE on the chosen model (the live model metadata lists `structured_outputs`)
 - How often NEAR rotates model signing keys
 
-**[TBD]**
+**[not built — see README]**
 - Final model ID (default suggestion `z-ai/glm-5.3-flash`)
 - Whether to pin approved measurements (`deploymentPolicy`)
 - TCB fallback (allow `SWHardeningNeeded`?)

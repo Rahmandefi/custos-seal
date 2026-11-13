@@ -44,3 +44,13 @@ Testnet (2026-11-08): accounts unchanged since 2026-11-05.
 - The writer's **full-access** key is kept **offline** (`~/.near-credentials/offline/`), not deleted. A NEAR account with only a function-call key and no remaining full-access key cannot add keys, delete keys, or recover; deleting the last full-access key locks the account. The offline key is the recovery path if the 0.25 NEAR allowance needs a top-up or the method list needs a change.
 - [x] UI (wallet connect, Verified panel from live `/analyze` checks, citation highlight, Recorded run, session isolation, demo cap)
 - [ ] Demo video (recording next)
+
+## Optional wallet-signed events (disabled)
+
+A **separate** testnet contract can record investigator-signed `start_case` and
+`attest_verification` hashes. Comparison still happens in the app; the contract
+stores opaque hashes only. Controls stay hidden until server env
+`WALLET_EVENTS_CONTRACT_ID` is set to a **new** account. Never point it at
+`ftcust15e434.testnet`. Print-only CLI helpers live in
+`wallet-signing-scripts/`. This repo does not ship that WASM. Do not create,
+fund, or deploy the events account from the build log alone.
