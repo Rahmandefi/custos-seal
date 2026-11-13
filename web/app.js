@@ -798,7 +798,7 @@ function sampleFindingReceipt() {
 }
 
 function analyzeHasEvidence() {
-  return Boolean(state.analyzeEvidenceName || state.walk?.evidenceName);
+  return Boolean(state.analyzeEvidenceFile || state.analyzeEvidenceName);
 }
 
 function viewAnalyze() {
@@ -1902,6 +1902,7 @@ function bind() {
       dt.items.add(file);
       const input = document.getElementById("ev");
       if (input) input.files = dt.files;
+      state.analyzeEvidenceFile = file;
       state.analyzeEvidenceName = s.name || "larkmoor-listing.txt";
       state.analyzeEvidenceFromSample = true;
       state.analyzeMissingEvidence = false;
@@ -1914,9 +1915,15 @@ function bind() {
   }
   const af = document.getElementById("analyze-form");
   if (af) {
+    if (af.file && state.analyzeEvidenceFile && !af.file.files?.length) {
+      const dt = new DataTransfer();
+      dt.items.add(state.analyzeEvidenceFile);
+      af.file.files = dt.files;
+    }
     if (af.file) {
       af.file.onchange = () => {
-        const f = af.file.files?.[0];
+        const f = af.file.files?.[0] || null;
+        state.analyzeEvidenceFile = f;
         state.analyzeEvidenceName = f ? f.name : "";
         state.analyzeEvidenceFromSample = false;
         state.analyzeMissingEvidence = false;
@@ -1925,7 +1932,7 @@ function bind() {
     }
     af.onsubmit = async (e) => {
       e.preventDefault();
-      const file = af.file?.files?.[0];
+      const file = af.file?.files?.[0] || state.analyzeEvidenceFile;
       if (!file) {
         state.analyzeMissingEvidence = true;
         state.analyze = null;
