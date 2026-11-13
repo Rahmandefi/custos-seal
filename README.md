@@ -1,10 +1,12 @@
-# Custos Seal · Private Forensic Triage Assistant
+# Custos Seal
 
-Investigator uploads sensitive evidence. A model analyzes it inside a confidential TEE on NEAR AI Cloud. Each finding is a signed, timestamped custody receipt on a NEAR contract, with citations checked byte-for-byte against the source.
+**AI can analyze sensitive evidence, but nobody can prove where it ran, what it saw, or that the evidence wasn't altered later.**
 
-Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). Built for NEAR HACKATHON (code since Oct 19, 2026).
+Custos Seal is a Private Forensic Triage Assistant: investigators upload FICTIONAL/demo evidence, a confidential TEE model on NEAR AI Cloud analyzes it, and each finding becomes a signed, timestamped custody receipt on a NEAR testnet contract. Citations must match the evidence byte-for-byte. Only fingerprints and signatures go on-chain, never the file.
 
-## Verify without an API key (screeners start here)
+Tracks: Privacy & Private AI (`privacy`) · AI Security & Defense (`security`). Built for NEAR HACKATHON.
+
+## Try it (no API key, no wallet)
 
 ```bash
 git clone https://github.com/Rahmandefi/custos-seal.git
@@ -14,18 +16,18 @@ npm ci
 npm run verify
 ```
 
-This verifies the FICTIONAL `larkmoor-sample-v2` sample against the live testnet
-contract `ftcust15e434.testnet` (or the contract id in `samples/contract.json`).
-It recomputes evidence commitments, finding_hash, and citation hashes from
-`samples/seed/` for the sample Findings, and checks ed25519 signatures on every
-Finding on the contract. It does **not** call NEAR AI Cloud and does **not**
-send transactions. The sample salt and `samples/seed/` are public by design
-(fictional data only).
+This verifies the FICTIONAL `larkmoor-sample-v2` sample against live testnet contract `ftcust15e434.testnet`. It recomputes evidence commitments, finding_hash, and citation hashes from `samples/seed/` for the sample Findings, and checks ed25519 signatures on every Finding on the contract. It does **not** call NEAR AI Cloud and does **not** send transactions. The sample salt and `samples/seed/` are public by design (fictional data only).
 
-REPORTDATA / quote checks remain offline via `scripts/verify_report.py` (dcap-qvl),
-not this command.
+Hosted demo (no install): https://custos-seal.vercel.app
 
-Demo writes (`DEMO_MODE=1`) rate-limit per instance in memory and reset on cold start.
+## Hackathon disclosure
+
+- **Code start date:** First git commit is `99866d4` dated **2026-11-05** (on or after the 2026-10-19 eligibility cutoff).
+- **Libraries (from manifests):** `@nearai/inference-sdk` 0.2.1; `near-api-js` ^7.4.0; `pdf-lib` ^1.17.1; `tweetnacl` ^1.0.3; `near-sdk` 5.30.0; `dcap-qvl` 0.7.1. Runtime: Node 20.20.2 for `npm run verify`; Node ≥ 24.22.1 for server/`verify-one`.
+- **AI-assisted code:** Yes — AI coding assistants were used for implementation and docs; humans reviewed and own the result.
+- **Other projects:** None submitted alongside this entry.
+- **Hosted demo:** https://custos-seal.vercel.app kept available through **2026-11-25**.
+- **Funds / network:** Demo and scripts use **NEAR testnet only**. The app does not move funds on mainnet. The writer key is a function-call key limited to `record_finding` and `record_custody_check` on `ftcust15e434.testnet`.
 
 ## Why NEAR (not just a signed log)
 
@@ -267,7 +269,7 @@ Runtime (not a library): Node 20.20.2 for `npm run verify` / `npm run test:polic
 
 `samples/` is a **FICTIONAL SCENARIO** (City of Larkmoor Records Office). Not a real case.
 
-## Status (2026-11-08)
+## Status (2026-11-13)
 
 Day 1 live check (Confidential TEE, Ed25519, TCB UpToDate):
 
@@ -310,7 +312,7 @@ Testnet (2026-11-08): accounts unchanged since 2026-11-05.
 - Writer function-call keys on-chain (receiver `ftcust15e434.testnet`, methods `record_finding` + `record_custody_check`): `ed25519:2f4coffNJB6iV9t7DdnByZNEETr1UXvvYhLfAGe5bevv` and `ed25519:6Sq16qQU4WoiYoPjRxb1fjYbiv1ASJvEuUgzoKiDzcqS`
 - The writer's **full-access** key is kept **offline** (`~/.near-credentials/offline/`), not deleted. A NEAR account with only a function-call key and no remaining full-access key cannot add keys, delete keys, or recover; deleting the last full-access key locks the account. The offline key is the recovery path if the 0.25 NEAR allowance needs a top-up or the method list needs a change.
 - [x] UI (wallet connect, Verified panel from live `/analyze` checks, citation highlight, Recorded run, session isolation, demo cap)
-- [ ] Demo video
+- [ ] Demo video (recording next)
 
 ## License
 

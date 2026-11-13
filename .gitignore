@@ -20,3 +20,4 @@ contracts/*/target/
 .vercel
 .env*
 custos-security.patch
+recording-kit/
